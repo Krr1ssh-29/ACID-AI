@@ -1,0 +1,67 @@
+name: 'ACID AI'
+description: 'ACID AI — AI-Powered CI/CD Failure Diagnosis & Self-Healing.'
+author: 'Ayushi Vasishtha'
+inputs:
+  ai_provider:
+    description: 'Active AI Provider (gemini or claude)'
+    required: false
+    default: 'gemini'
+  gemini_api_key:
+    description: 'Google Gemini API key'
+    required: false
+  gemini_model:
+    description: 'Gemini model identifier (e.g. gemini-3.8-flash, gemini-4-argon)'
+    required: false
+    default: 'gemini-3.8-flash'
+  anthropic_api_key:
+    description: 'Anthropic Claude API key'
+    required: false
+  anthropic_model:
+    description: 'Anthropic model identifier (e.g. claude-sonnet-4-6)'
+    required: false
+    default: 'claude-sonnet-4-6'
+  github_token:
+    description: 'GitHub token for comments and Draft PRs'
+    required: false
+  log_file:
+    description: 'Path to combined pipeline failure logs'
+    required: false
+    default: 'combined-logs.txt'
+  generate_patch:
+    description: 'Whether to generate code patches and verify them'
+    required: false
+    default: 'true'
+  enable_repair_pr:
+    description: 'Whether to publish verified repairs as Draft PRs'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install Agent Dependencies
+      shell: bash
+      run: |
+        pip install -r "${{ github.action_path }}/requirements.txt"
+    - name: Execute ACID AI
+      shell: bash
+      env:
+        AI_PROVIDER: ${{ inputs.ai_provider }}
+        GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
+        GEMINI_MODEL: ${{ inputs.gemini_model }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        ANTHROPIC_MODEL: ${{ inputs.anthropic_model }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        LOG_FILE: ${{ inputs.log_file }}
+        GENERATE_PATCH: ${{ inputs.generate_patch }}
+        ENABLE_REPAIR_PR: ${{ inputs.enable_repair_pr }}
+        REPO_NAME: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        COMMIT_SHA: ${{ github.sha }}
+        RUN_ID: ${{ github.run_id }}
+      run: |
+        python -m agent.cli

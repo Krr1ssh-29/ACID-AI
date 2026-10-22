@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ACID AI — AI-Powered CI/CD Failure Diagnosis &amp; Self-Healing</title>
+  <meta name="description" content="ACID AI — AI-Powered CI/CD Failure Diagnosis &amp; Self-Healing. Detects pipeline failures, diagnoses root cause, generates minimal patches, and enforces fail-closed isolated verification.">
+
+  <!-- Typography: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Top Header -->
+    <header class="app-header glass-panel">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h1>ACID AI <span style="font-size:12px;font-weight:600;color:var(--brand-primary);background:rgba(99,102,241,0.15);padding:2px 8px;border-radius:6px;border:1px solid rgba(99,102,241,0.3)">HACKATHON DEMO</span></h1>
+          <p>Diagnose failures. Propose fixes. Verify safely.</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="status-pill" id="docker-status-pill">
+          <span class="status-dot"></span> Checking Docker...
+        </div>
+        <div class="status-pill" id="gemini-status-pill">
+          <span class="status-dot"></span> Checking Gemini...
+        </div>
+        <button class="btn-secondary" id="btn-reset" title="Clear Demo History">Reset Demo</button>
+      </div>
+    </header>
+
+    <!-- Scenario Controls & Provider Toggle -->
+    <section class="control-strip glass-panel" aria-labelledby="scenario-heading">
+      <div class="control-title-row">
+        <h2 id="scenario-heading">Select Reproducible Demonstration Scenario</h2>
+        <div class="provider-toggle-group">
+          <span class="toggle-label">AI Engine Mode:</span>
+          <div class="toggle-switch-wrapper" role="radiogroup" aria-label="AI Engine Mode">
+            <button class="toggle-btn active" id="toggle-mock" role="radio" aria-checked="true">Deterministic Mock (Offline Safe)</button>
+            <button class="toggle-btn" id="toggle-gemini" role="radio" aria-checked="false">Live Gemini API</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="scenarios-grid" id="scenarios-container">
+        <!-- Injected via app.js -->
+      </div>
+    </section>
+
+    <!-- 5-Stage Orchestration Stepper -->
+    <section class="stepper-container glass-panel" aria-label="Pipeline Progress Stepper">
+      <div class="stepper">
+        <div class="step-node active" id="step-node-1">
+          <div class="step-circle">1</div>
+          <div class="step-label">Log Detection</div>
+        </div>
+        <div class="step-node" id="step-node-2">
+          <div class="step-circle">2</div>
+          <div class="step-label">AI Diagnosis</div>
+        </div>
+        <div class="step-node" id="step-node-3">
+          <div class="step-circle">3</div>
+          <div class="step-label">Policy Validation</div>
+        </div>
+        <div class="step-node" id="step-node-4">
+          <div class="step-circle">4</div>
+          <div class="step-label">Isolated Verification</div>
+        </div>
+        <div class="step-node" id="step-node-5">
+          <div class="step-circle">5</div>
+          <div class="step-label">Draft PR Delivery</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Workspace -->
+    <main class="main-workspace">
+      <!-- Left Column: Pipeline Stages & Terminal Console -->
+      <section class="left-column">
+        <!-- Pipeline Stage Indicators -->
+        <div class="glass-panel">
+          <div class="card-header">
+            <h3><span>📊</span> Pipeline Stages Overview</h3>
+            <span style="font-size:11px;color:var(--text-muted);">Real Exit Code Signals</span>
+          </div>
+          <div class="card-body">
+            <div class="stage-pills-row" id="stage-pills">
+              <!-- Injected via app.js -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminal Logs Console -->
+        <div class="terminal-card">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="terminal-dot dot-red"></span>
+              <span class="terminal-dot dot-yellow"></span>
+              <span class="terminal-dot dot-green"></span>
+            </div>
+            <div class="terminal-title">ci-console-output.log</div>
+            <button class="btn-secondary" style="padding:3px 10px;font-size:11px;" onclick="navigator.clipboard.writeText(document.getElementById('terminal-logs').innerText)">Copy</button>
+          </div>
+          <pre class="terminal-body" id="terminal-logs">Select a scenario to view real-time log ingestion and failure classification...</pre>
+        </div>
+      </section>
+
+      <!-- Right Column: AI Triage, Diff Review, Safety & Delivery -->
+      <section class="right-column">
+        <!-- AI Diagnosis Card -->
+        <div class="glass-panel" id="card-diagnosis">
+          <div class="card-header">
+            <h3><span>🧠</span> Root Cause Diagnosis</h3>
+            <span class="badge-pill" id="ai-provider-badge" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3)">Deterministic Mock</span>
+          </div>
+          <div class="card-body">
+            <div class="diagnosis-meta-grid" id="diagnosis-meta">
+              <!-- Injected via app.js -->
+            </div>
+            <div class="diagnosis-root-cause" id="diagnosis-root-cause">
+              Awaiting scenario execution...
+            </div>
+            <h4 style="font-size:12px;text-transform:uppercase;color:var(--text-muted);font-weight:600;margin-bottom:8px;">Remediation Recommendations:</h4>
+            <div id="diagnosis-fixes">
+              <!-- Injected via app.js -->
+            </div>
+            <div style="margin-top:12px;font-size:11px;color:var(--text-muted);">
+              <strong>Cited Log Evidence:</strong>
+              <code style="display:block;margin-top:4px;padding:6px 10px;background:rgba(0,0,0,0.3);border-radius:4px;color:#cbd5e1;font-family:var(--font-mono);" id="diagnosis-evidence">None</code>
+            </div>
+          </div>
+        </div>
+
+        <!-- Patch Diff Reviewer Card -->
+        <div class="glass-panel" id="card-patch">
+          <div class="card-header">
+            <h3><span>🛠️</span> Candidate Patch Diff</h3>
+            <span style="font-size:12px;color:var(--text-muted);">Target: <span id="patch-files-list" style="color:#fff;font-family:var(--font-mono);">None</span></span>
+          </div>
+          <div class="card-body">
+            <div class="diff-container" id="patch-diff">
+              // Awaiting patch generation...
+            </div>
+            <div class="policy-checklist" id="patch-policy-checks">
+              <!-- Injected via app.js -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Safety & Isolated Verification Card -->
+        <div class="glass-panel" id="card-verification">
+          <div class="card-header">
+            <h3><span>🔬</span> Safety & Isolated Verification</h3>
+            <span class="badge-pill blocked" id="verif-status-badge">BLOCKED</span>
+          </div>
+          <div class="card-body">
+            <div class="safety-alert blocked" id="verif-alert">
+              <div class="alert-icon">⚠️</div>
+              <div class="alert-text">
+                <h4>Fail-Closed Protection Active</h4>
+                <p>Candidate code execution was strictly refused on the host runner. Missing enforceable container isolation.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Repair Delivery Card -->
+        <div class="glass-panel" id="card-delivery">
+          <div class="card-header">
+            <h3><span>🚀</span> Repair Pull Request Delivery</h3>
+            <span class="badge-pill blocked" id="pub-status-badge">BLOCKED</span>
+          </div>
+          <div class="card-body">
+            <div class="safety-alert blocked" id="pub-alert">
+              <div class="alert-icon">🔒</div>
+              <div class="alert-text">
+                <h4>Publication Gate Enforced</h4>
+                <p>PR publishing strictly blocked: Verification did not report VERIFIED_SUCCESS. Unverified candidate code is never proposed as a pull request.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Run History Table -->
+    <section class="history-section glass-panel">
+      <div class="card-header" style="border:none;padding:0 0 12px 0;">
+        <h3><span>🕒</span> Presentation Run History</h3>
+        <span style="font-size:12px;color:var(--text-muted);">Truthful Local Session Log</span>
+      </div>
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>Run ID</th>
+            <th>Scenario</th>
+            <th>Type</th>
+            <th>Pipeline Status</th>
+            <th>Verification Status</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody id="history-tbody">
+          <!-- Injected via app.js -->
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

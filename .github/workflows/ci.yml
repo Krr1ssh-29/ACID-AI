@@ -1,0 +1,158 @@
+name: CI Pipeline with ACID AI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        id: install
+        run: |
+          pip install -r sample-app/requirements.txt 2>&1 | tee install-output.txt
+        continue-on-error: true
+
+      - name: Run lint check
+        id: lint
+        run: |
+          pip install flake8
+          flake8 sample-app/ --max-line-length=120 2>&1 | tee lint-output.txt
+        continue-on-error: true
+
+      - name: Run tests
+        id: test
+        run: |
+          pip install pytest
+          pytest sample-app/tests/ -v 2>&1 | tee test-output.txt
+        continue-on-error: true
+
+      - name: Build Docker image
+        id: docker
+        run: |
+          docker build -t sample-app:${{ github.sha }} ./sample-app 2>&1 | tee docker-output.txt
+        continue-on-error: true
+
+      - name: Combine all logs
+        if: always()
+        run: |
+          echo "=== INSTALL LOGS ===" > combined-logs.txt
+          cat install-output.txt >> combined-logs.txt 2>/dev/null || echo "No install logs" >> combined-logs.txt
+          echo "=== LINT LOGS ===" >> combined-logs.txt
+          cat lint-output.txt >> combined-logs.txt 2>/dev/null || echo "No lint logs" >> combined-logs.txt
+          echo "=== TEST LOGS ===" >> combined-logs.txt
+          cat test-output.txt >> combined-logs.txt 2>/dev/null || echo "No test logs" >> combined-logs.txt
+          echo "=== DOCKER LOGS ===" >> combined-logs.txt
+          cat docker-output.txt >> combined-logs.txt 2>/dev/null || echo "No docker logs" >> combined-logs.txt
+          echo "=== STEP OUTCOMES ===" >> combined-logs.txt
+          echo "install: ${{ steps.install.outcome }}" >> combined-logs.txt
+          echo "lint: ${{ steps.lint.outcome }}" >> combined-logs.txt
+          echo "test: ${{ steps.test.outcome }}" >> combined-logs.txt
+          echo "docker: ${{ steps.docker.outcome }}" >> combined-logs.txt
+
+      - name: Upload combined logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: combined-logs
+          path: combined-logs.txt
+
+      - name: Enforce truthful pipeline status
+        if: always()
+        run: |
+          FAILED=0
+          check_step() {
+            local step="$1"
+            local outcome="$2"
+            local allow_skip="${3:-false}"
+
+            echo "Step '$step' outcome: $outcome"
+            case "$outcome" in
+              success)
+                ;;
+              skipped)
+                if [ "$allow_skip" != "true" ]; then
+                  echo "❌ Required step '$step' was skipped without meeting dependency conditions."
+                  FAILED=1
+                else
+                  echo "ℹ️ Step '$step' was intentionally skipped."
+                fi
+                ;;
+              failure)
+                echo "❌ Required step '$step' failed."
+                FAILED=1
+                ;;
+              cancelled)
+                echo "❌ Required step '$step' was cancelled."
+                FAILED=1
+                ;;
+              *)
+                echo "❌ Required step '$step' ended with non-success status: '$outcome'."
+                FAILED=1
+                ;;
+            esac
+          }
+
+          check_step "install" "${{ steps.install.outcome }}" "false"
+          check_step "lint" "${{ steps.lint.outcome }}" "false"
+          check_step "test" "${{ steps.test.outcome }}" "false"
+          check_step "docker" "${{ steps.docker.outcome }}" "false"
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "❌ Pipeline stage failure, cancellation, or unexpected skip detected. Failing job for truthful CI status."
+            exit 1
+          fi
+          echo "✅ All required pipeline stages succeeded."
+
+  self-healing-agent:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: always()
+    permissions:
+      pull-requests: write
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install agent dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Download pipeline logs
+        uses: actions/download-artifact@v4
+        with:
+          name: combined-logs
+        continue-on-error: true
+
+      - name: Run ACID AI
+        env:
+          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO_NAME: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python agent/self_healing_agent.py

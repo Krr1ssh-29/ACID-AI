@@ -1,0 +1,21 @@
+=== INSTALL LOGS ===
+No install logs
+=== LINT LOGS ===
+No lint logs
+=== TEST LOGS ===
+No test logs
+=== DOCKER LOGS ===
+Sending build context to Docker daemon  42.5kB
+Step 1/6 : FROM python:3.11-slim
+ ---> 9b54c8e76da4
+Step 2/6 : WORKDIR /app
+ ---> Using cache
+ ---> c49d1e57c128
+Step 3/6 : COPY missing_requirements.txt .
+COPY failed: file not found in build context or excluded by .dockerignore: stat missing_requirements.txt: file does not exist
+runc run failed: build failed
+=== STEP OUTCOMES ===
+install: skipped
+lint: skipped
+test: skipped
+docker: failure

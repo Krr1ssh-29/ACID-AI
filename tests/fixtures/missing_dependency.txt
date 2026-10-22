@@ -1,0 +1,16 @@
+=== INSTALL LOGS ===
+Collecting requests==2.32.3
+Collecting nonexistent-package==9.9.9
+ERROR: Could not find a version that satisfies the requirement nonexistent-package==9.9.9 (from versions: none)
+ERROR: No matching distribution found for nonexistent-package==9.9.9
+=== LINT LOGS ===
+No lint logs
+=== TEST LOGS ===
+No test logs
+=== DOCKER LOGS ===
+No docker logs
+=== STEP OUTCOMES ===
+install: failure
+lint: skipped
+test: skipped
+docker: skipped

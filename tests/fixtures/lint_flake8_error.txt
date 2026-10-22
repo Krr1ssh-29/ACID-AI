@@ -1,0 +1,15 @@
+=== INSTALL LOGS ===
+Installing dependencies... done.
+=== LINT LOGS ===
+sample-app/app.py:12:80: E501 line too long (128 > 120 characters)
+sample-app/app.py:2:1: F401 'os' imported but unused
+sample-app/app.py:45:1: E302 expected 2 blank lines, found 1
+=== TEST LOGS ===
+No test logs
+=== DOCKER LOGS ===
+No docker logs
+=== STEP OUTCOMES ===
+install: success
+lint: failure
+test: skipped
+docker: skipped

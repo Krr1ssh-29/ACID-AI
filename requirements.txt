@@ -1,0 +1,4 @@
+# Runtime dependencies for AI CI/CD Failure Triage Agent
+requests==2.32.3
+anthropic==2.0.0
+pydantic==2.14.1

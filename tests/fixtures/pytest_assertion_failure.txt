@@ -1,0 +1,37 @@
+=== INSTALL LOGS ===
+Dependencies installed.
+=== LINT LOGS ===
+No lint errors detected.
+=== TEST LOGS ===
+============================= test session starts ==============================
+rootdir: /app/sample-app
+collected 3 items
+
+tests/test_app.py::test_health_endpoint PASSED                           [ 33%]
+tests/test_app.py::test_index_endpoint FAILED                            [ 66%]
+tests/test_app.py::test_health_returns_version PASSED                    [100%]
+
+=================================== FAILURES ===================================
+_____________________________ test_index_endpoint ______________________________
+
+client = <FlaskClient <Flask 'app'>>
+
+    def test_index_endpoint(client):
+        response = client.get("/")
+        assert response.status_code == 200
+        data = response.get_json()
+>       assert data["message"] == "Welcome to the Sample App!"
+E       AssertionError: assert 'Service Unavailable' == 'Welcome to the Sample App!'
+E         - Welcome to the Sample App!
+E         + Service Unavailable
+
+tests/test_app.py:28: AssertionError
+=========================== 1 failed, 2 passed in 0.42s ===========================
+PYTEST_FAILED=true
+=== DOCKER LOGS ===
+No docker logs
+=== STEP OUTCOMES ===
+install: success
+lint: success
+test: failure
+docker: skipped

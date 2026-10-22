@@ -1,0 +1,8 @@
+[flake8]
+max-line-length = 120
+jobs = 1
+exclude = .git,__pycache__,.venv,venv,build,dist,.pytest_cache
+ignore = E203, W503
+per-file-ignores =
+    agent/self_healing_agent.py: E402
+    sample-app/tests/test_app.py: E402
