@@ -306,7 +306,7 @@ def main(argv: Optional[List[str]] = None, config: Optional[AgentConfig] = None)
 
             if cfg.enable_repair_pr:
                 print("🚀 Attempting to publish repair pull request...")
-                pub_result = publish_repair_pr(patch, verification, analysis, cfg)
+                pub_result = publish_repair_pr(patch, verification, analysis, cfg, repo_root=os.getcwd())
                 pub_dict = pub_result.model_dump()
                 if pub_result.status == PublishStatus.PUBLISHED:
                     print(f"🎉 Draft PR created: #{pub_result.pr_number} ({pub_result.pr_url})")

@@ -231,6 +231,24 @@ class AgentConfig(BaseModel):
     max_prompt_tokens: int = Field(
         default=12000, ge=1000, le=100000, description="Maximum total prompt tokens allowed per run"
     )
+    event_name: Optional[str] = Field(
+        default=None, description="GitHub Actions event name (e.g. push, pull_request)"
+    )
+    ref_name: Optional[str] = Field(
+        default=None, description="Pushed branch or ref name (from github.ref_name)"
+    )
+    head_ref: Optional[str] = Field(
+        default=None, description="Pull request source/head branch (from github.head_ref)"
+    )
+    base_ref: Optional[str] = Field(
+        default=None, description="Pull request target/base branch (from github.base_ref)"
+    )
+    pr_head_sha: Optional[str] = Field(
+        default=None, description="Pull request head commit SHA (from github.event.pull_request.head.sha)"
+    )
+    pr_head_repo: Optional[str] = Field(
+        default=None, description="Pull request head repository in owner/repo format"
+    )
 
     @field_validator("ai_provider", mode="before")
     @classmethod

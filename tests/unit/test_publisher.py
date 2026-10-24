@@ -920,3 +920,294 @@ def test_publish_repair_pr_disabled_by_default_no_api_calls():
         assert "disabled in configuration" in result.message
         mock_get.assert_not_called()
         mock_post.assert_not_called()
+
+
+def test_publish_repair_pr_direct_push_targeting():
+    """Verify that a direct push failure targets the pushed branch as base branch for the draft PR."""
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+    diag = {"failure_types": ["test"]}
+    cfg = AgentConfig(
+        github_token="ghp_token_push",
+        repo_name="owner/repo",
+        run_id="run-push-1",
+        event_name="push",
+        ref_name="release-2.0",
+        commit_sha="commit_sha_push_999",
+        enable_repair_pr=True,
+    )
+
+    posted_payloads = {}
+
+    def mock_requests_get(url, *args, **kwargs):
+        mock_resp = MagicMock()
+        if "/git/ref/heads/agent/fix-" in url:
+            mock_resp.status_code = 404
+            return mock_resp
+        if "/git/ref/heads/release-2.0" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"object": {"sha": "commit_sha_push_999"}}
+            return mock_resp
+        if "/git/commits/commit_sha_push_999" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"tree": {"sha": "tree_sha_push_888"}}
+            return mock_resp
+        if "/contents/" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "content": "def old_func():\n    return True\n",
+                "encoding": "utf-8",
+            }
+            return mock_resp
+        mock_resp.status_code = 404
+        return mock_resp
+
+    def mock_requests_post(url, *args, **kwargs):
+        mock_resp = MagicMock()
+        json_data = kwargs.get("json", {})
+        if "/git/trees" in url:
+            posted_payloads["tree"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"sha": "new_tree_sha"}
+            return mock_resp
+        if "/git/commits" in url:
+            posted_payloads["commit"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"sha": "new_commit_sha"}
+            return mock_resp
+        if "/git/refs" in url:
+            posted_payloads["ref"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"ref": "refs/heads/agent/fix-test-run-push-1"}
+            return mock_resp
+        if "/pulls" in url:
+            posted_payloads["pull"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"number": 501, "html_url": "https://github.com/owner/repo/pull/501"}
+            return mock_resp
+        mock_resp.status_code = 404
+        return mock_resp
+
+    with patch("requests.get", side_effect=mock_requests_get), \
+         patch("requests.post", side_effect=mock_requests_post):
+        result = publish_repair_pr(patch_obj, verif, diag, cfg)
+        assert result.status == PublishStatus.PUBLISHED
+        assert posted_payloads["pull"]["base"] == "release-2.0"
+        assert posted_payloads["pull"]["draft"] is True
+        assert posted_payloads["commit"]["parents"] == ["commit_sha_push_999"]
+
+
+def test_publish_repair_pr_same_repo_pr_head_targeting_not_base():
+    """Verify that a same-repo PR targets the PR head branch, NEVER base_ref."""
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+    diag = {"failure_types": ["test"]}
+    cfg = AgentConfig(
+        github_token="ghp_token_pr_internal",
+        repo_name="owner/repo",
+        run_id="run-pr-same",
+        event_name="pull_request",
+        pr_number="300",
+        head_ref="fix-security-leak",
+        base_ref="main",
+        pr_head_sha="head_commit_sha_777",
+        commit_sha="synthetic_merge_commit_sha",
+        pr_head_repo="owner/repo",
+        enable_repair_pr=True,
+    )
+
+    posted_payloads = {}
+
+    def mock_requests_get(url, *args, **kwargs):
+        mock_resp = MagicMock()
+        if "/git/ref/heads/agent/fix-" in url:
+            mock_resp.status_code = 404
+            return mock_resp
+        if "/git/ref/heads/fix-security-leak" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"object": {"sha": "head_commit_sha_777"}}
+            return mock_resp
+        if "/git/commits/head_commit_sha_777" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"tree": {"sha": "tree_head_sha_666"}}
+            return mock_resp
+        if "/contents/" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "content": "def old_func():\n    return True\n",
+                "encoding": "utf-8",
+            }
+            return mock_resp
+        mock_resp.status_code = 404
+        return mock_resp
+
+    def mock_requests_post(url, *args, **kwargs):
+        mock_resp = MagicMock()
+        json_data = kwargs.get("json", {})
+        if "/git/trees" in url:
+            posted_payloads["tree"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"sha": "new_tree_sha"}
+            return mock_resp
+        if "/git/commits" in url:
+            posted_payloads["commit"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"sha": "new_commit_sha"}
+            return mock_resp
+        if "/git/refs" in url:
+            posted_payloads["ref"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"ref": "refs/heads/agent/fix-test-run-pr-same"}
+            return mock_resp
+        if "/pulls" in url:
+            posted_payloads["pull"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"number": 301, "html_url": "https://github.com/owner/repo/pull/301"}
+            return mock_resp
+        mock_resp.status_code = 404
+        return mock_resp
+
+    with patch("requests.get", side_effect=mock_requests_get), \
+         patch("requests.post", side_effect=mock_requests_post):
+        result = publish_repair_pr(patch_obj, verif, diag, cfg)
+        assert result.status == PublishStatus.PUBLISHED
+
+        # CRITICAL ROADMAP CHECK:
+        # Must target PR head branch ("fix-security-leak"), NEVER base_ref ("main")
+        assert posted_payloads["pull"]["base"] == "fix-security-leak"
+        assert posted_payloads["pull"]["base"] != "main"
+        assert posted_payloads["pull"]["draft"] is True
+
+        # Must base repair commit on PR head commit, NEVER synthetic merge SHA
+        assert posted_payloads["commit"]["parents"] == ["head_commit_sha_777"]
+        assert posted_payloads["commit"]["parents"] != ["synthetic_merge_commit_sha"]
+        assert posted_payloads["tree"]["base_tree"] == "tree_head_sha_666"
+
+
+def test_publish_repair_pr_external_fork_identity_rejection(tmp_path, monkeypatch):
+    """Verify that an external fork PR aborts branch writes and triggers safe fallback."""
+    monkeypatch.chdir(tmp_path)
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+    diag = {"failure_types": ["test"]}
+    cfg = AgentConfig(
+        github_token="ghp_token_fork",
+        repo_name="upstream-org/repo",
+        run_id="run-fork-pr",
+        event_name="pull_request",
+        pr_number="123",
+        head_ref="main",  # Same branch name, but different repository!
+        base_ref="main",
+        pr_head_sha="fork_sha_external",
+        pr_head_repo="fork-user/repo",
+        enable_repair_pr=True,
+    )
+
+    with patch("requests.post") as mock_post, \
+         patch("agent.github.post_pr_comment") as mock_comment:
+        result = publish_repair_pr(patch_obj, verif, diag, cfg)
+        assert result.status == PublishStatus.FORK_LIMITATION
+        assert "External fork PR detected" in result.message
+        assert "fork-user/repo" in result.message
+        assert "upstream-org/repo" in result.message
+
+        # Zero remote write requests to GitHub API
+        mock_post.assert_not_called()
+
+        # Fallback artifact saved to disk
+        artifact = tmp_path / "agent-patch.diff"
+        assert artifact.exists()
+        assert artifact.read_text(encoding="utf-8") == patch_obj.diff
+
+        # Diagnostic comment posted to PR #123
+        mock_comment.assert_called_once()
+
+
+def test_publish_repair_pr_exact_base_sha_used_for_tree_and_commit():
+    """Verify that the exact PR head commit SHA is used as parent and tree base."""
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+    diag = {"failure_types": ["test"]}
+    exact_head_sha = "abc1234567890abcdef1234567890abcdef1234"
+    exact_tree_sha = "tree9876543210fedcba9876543210fedcba9876"
+
+    cfg = AgentConfig(
+        github_token="ghp_token_exact",
+        repo_name="owner/repo",
+        run_id="run-exact-sha",
+        event_name="pull_request",
+        pr_number="789",
+        head_ref="my-feature",
+        base_ref="main",
+        pr_head_sha=exact_head_sha,
+        commit_sha="not_this_merge_sha",
+        pr_head_repo="owner/repo",
+        enable_repair_pr=True,
+    )
+
+    requested_commit_url = []
+    posted_payloads = {}
+
+    def mock_requests_get(url, *args, **kwargs):
+        mock_resp = MagicMock()
+        if "/git/ref/heads/agent/fix-" in url:
+            mock_resp.status_code = 404
+            return mock_resp
+        if "/git/ref/heads/my-feature" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"object": {"sha": exact_head_sha}}
+            return mock_resp
+        if f"/git/commits/{exact_head_sha}" in url:
+            requested_commit_url.append(url)
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"tree": {"sha": exact_tree_sha}}
+            return mock_resp
+        if "/contents/" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "content": "def old_func():\n    return True\n",
+                "encoding": "utf-8",
+            }
+            return mock_resp
+        mock_resp.status_code = 404
+        return mock_resp
+
+    def mock_requests_post(url, *args, **kwargs):
+        mock_resp = MagicMock()
+        json_data = kwargs.get("json", {})
+        if "/git/trees" in url:
+            posted_payloads["tree"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"sha": "new_tree"}
+            return mock_resp
+        if "/git/commits" in url:
+            posted_payloads["commit"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"sha": "new_commit"}
+            return mock_resp
+        if "/git/refs" in url:
+            posted_payloads["ref"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"ref": "refs/heads/agent/fix-test-run-exact-sha"}
+            return mock_resp
+        if "/pulls" in url:
+            posted_payloads["pull"] = json_data
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"number": 790, "html_url": "https://github.com/owner/repo/pull/790"}
+            return mock_resp
+        mock_resp.status_code = 404
+        return mock_resp
+
+    with patch("requests.get", side_effect=mock_requests_get), \
+         patch("requests.post", side_effect=mock_requests_post):
+        result = publish_repair_pr(patch_obj, verif, diag, cfg)
+        assert result.status == PublishStatus.PUBLISHED
+
+        # Verify exact SHA commit inspection
+        assert len(requested_commit_url) == 1
+        assert exact_head_sha in requested_commit_url[0]
+
+        # Verify tree and commit parents
+        assert posted_payloads["tree"]["base_tree"] == exact_tree_sha
+        assert posted_payloads["commit"]["parents"] == [exact_head_sha]
+        assert posted_payloads["pull"]["base"] == "my-feature"

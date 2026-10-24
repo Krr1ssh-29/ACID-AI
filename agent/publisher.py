@@ -87,6 +87,7 @@ def format_repair_pr_body(
     patch: PatchProposal,
     verification: VerificationResult,
     config: AgentConfig,
+    target_branch: Optional[str] = None,
 ) -> str:
     """Construct clear, comprehensive Draft PR markdown description.
 
@@ -101,6 +102,7 @@ def format_repair_pr_body(
         patch: Validated PatchProposal.
         verification: Actual VerificationResult.
         config: AgentConfig.
+        target_branch: Optional target branch for the draft PR.
 
     Returns:
         Markdown string for Draft PR body.
@@ -115,9 +117,11 @@ def format_repair_pr_body(
     run_url = f"https://github.com/{config.repo_name}/actions/runs/{config.run_id}"
     root_cause = diagnosis.get("root_cause", "No detailed root cause provided.")
     if config.pr_number:
-        trigger_context_line = f"- **Trigger Context:** Pull Request `#{config.pr_number}`"
+        head_info = f" (head: `{config.head_ref}`)" if config.head_ref else ""
+        trigger_context_line = f"- **Trigger Context:** Pull Request `#{config.pr_number}`{head_info}"
     else:
-        trigger_context_line = f"- **Trigger Context:** Direct Push (`{config.base_branch or DEFAULT_BASE_BRANCH}`)"
+        pushed_branch = target_branch or config.ref_name or config.base_branch or DEFAULT_BASE_BRANCH
+        trigger_context_line = f"- **Trigger Context:** Direct Push (`{pushed_branch}`)"
 
     files_list_md = "\n".join([f"- `{fp.path}` ({fp.status}, +{fp.additions}/-{fp.deletions})" for fp in patch.files])
 
@@ -497,12 +501,50 @@ def publish_repair_pr(
         )
 
     repo = config.repo_name
-    base_branch = config.base_branch or DEFAULT_BASE_BRANCH
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
         "User-Agent": "ACID-AI",
     }
+
+    is_pr = bool(
+        (config.pr_number and str(config.pr_number).strip() not in ("", "None", "null"))
+        or config.event_name == "pull_request"
+    )
+
+    # External Fork Detection:
+    # If the pull request originates from an external fork repository, write access to the source
+    # repository is unavailable and attempting branch creation on the base repository targeting
+    # an external branch is invalid. Per ROADMAP.md, ACID AI never attempts unauthorized writes;
+    # it safely triggers the artifact and PR comment fallback.
+    if is_pr and config.pr_head_repo:
+        head_repo_clean = config.pr_head_repo.strip().lower()
+        base_repo_clean = repo.strip().lower()
+        if head_repo_clean != base_repo_clean:
+            handle_fork_fallback(
+                patch,
+                config,
+                f"External fork PR: source repository '{config.pr_head_repo}' differs from base repository '{repo}'",
+                verification=verification,
+            )
+            return PublishResult(
+                status=PublishStatus.FORK_LIMITATION,
+                message=(
+                    f"External fork PR detected: source repository '{config.pr_head_repo}' differs from "
+                    f"base repository '{repo}'. Aborting direct branch creation to prevent unauthorized "
+                    "write attempts. Saved patch to 'agent-patch.diff' and posted PR diagnostic comment."
+                ),
+            )
+
+    # Branch Targeting & Source Commit Identification:
+    # 1. Same-repository PR failure: Target PR head branch (config.head_ref) with the draft PR,
+    #    and base the repair branch on the PR head commit (config.pr_head_sha).
+    #    Never confuse github.base_ref (the PR's target branch) with github.head_ref (the source branch).
+    # 2. Direct push failure: Target the pushed branch (config.ref_name or config.base_branch).
+    if is_pr:
+        target_branch = config.head_ref or config.base_branch or DEFAULT_BASE_BRANCH
+    else:
+        target_branch = config.ref_name or config.base_branch or DEFAULT_BASE_BRANCH
 
     # 6. Construct dedicated repair branch name
     raw_cats = diagnosis.get("failure_types", ["repair"])
@@ -563,12 +605,12 @@ def publish_repair_pr(
 
             # Validated existing branch: retry Draft PR creation
             pr_title = format_repair_pr_title(cat_slug, config.run_id)
-            pr_body = format_repair_pr_body(diagnosis, patch, verification, config)
+            pr_body = format_repair_pr_body(diagnosis, patch, verification, config, target_branch=target_branch)
             pr_payload = {
                 "title": pr_title,
                 "body": pr_body,
                 "head": branch_name,
-                "base": base_branch,
+                "base": target_branch,
                 "draft": True,
             }
             pulls_url = f"https://api.github.com/repos/{repo}/pulls"
@@ -636,12 +678,12 @@ def publish_repair_pr(
             message=f"Network error querying GitHub API: {e}",
         )
 
-    # 8. Fetch base branch commit SHA
+    # 8. Fetch target branch commit SHA
     try:
-        base_ref_url = f"https://api.github.com/repos/{repo}/git/ref/heads/{base_branch}"
+        base_ref_url = f"https://api.github.com/repos/{repo}/git/ref/heads/{target_branch}"
         base_resp = requests.get(base_ref_url, headers=headers, timeout=20)
         if base_resp.status_code == 200:
-            base_sha = base_resp.json()["object"]["sha"]
+            branch_tip_sha = base_resp.json()["object"]["sha"]
         elif base_resp.status_code == 401:
             return PublishResult(
                 status=PublishStatus.PERMISSION_ERROR,
@@ -649,10 +691,10 @@ def publish_repair_pr(
             )
         elif base_resp.status_code == 404:
             # Fallback to branches endpoint
-            b_url = f"https://api.github.com/repos/{repo}/branches/{base_branch}"
+            b_url = f"https://api.github.com/repos/{repo}/branches/{target_branch}"
             b_resp = requests.get(b_url, headers=headers, timeout=20)
             if b_resp.status_code == 200:
-                base_sha = b_resp.json()["commit"]["sha"]
+                branch_tip_sha = b_resp.json()["commit"]["sha"]
             elif b_resp.status_code == 401:
                 return PublishResult(
                     status=PublishStatus.PERMISSION_ERROR,
@@ -661,24 +703,34 @@ def publish_repair_pr(
             else:
                 return PublishResult(
                     status=PublishStatus.API_ERROR,
-                    message=f"Base branch '{base_branch}' not found on repository '{repo}'.",
+                    message=f"Target branch '{target_branch}' not found on repository '{repo}'.",
                 )
         elif base_resp.status_code == 403:
-            handle_fork_fallback(patch, config, "403 Forbidden accessing base branch", verification=verification)
+            handle_fork_fallback(
+                patch, config, f"403 Forbidden accessing target branch '{target_branch}'", verification=verification
+            )
             return PublishResult(
                 status=PublishStatus.FORK_LIMITATION,
-                message=f"403 Forbidden reading base branch '{base_branch}' on '{repo}'.",
+                message=f"403 Forbidden reading target branch '{target_branch}' on '{repo}'.",
             )
         else:
             return PublishResult(
                 status=PublishStatus.API_ERROR,
-                message=f"Failed to fetch base branch '{base_branch}': HTTP {base_resp.status_code}",
+                message=f"Failed to fetch target branch '{target_branch}': HTTP {base_resp.status_code}",
             )
     except requests.RequestException as e:
         return PublishResult(
             status=PublishStatus.API_ERROR,
-            message=f"Network error fetching base branch commit: {e}",
+            message=f"Network error fetching target branch commit: {e}",
         )
+
+    # Exact base SHA resolution:
+    # On same-repository PR runs, the repair branch must be based on the PR head commit (pr_head_sha).
+    # On push runs or when pr_head_sha is omitted, use the verified target branch tip SHA.
+    if is_pr and config.pr_head_sha and config.pr_head_sha != "unknown":
+        base_sha = config.pr_head_sha
+    else:
+        base_sha = branch_tip_sha
 
     # 9. Get base tree SHA
     try:
@@ -700,7 +752,7 @@ def publish_repair_pr(
     tree_items = []
     for fp in patch.files:
         try:
-            content = get_patched_file_content(fp, repo_root, base_branch, repo, headers)
+            content = get_patched_file_content(fp, repo_root, target_branch, repo, headers)
         except ValueError as e:
             return PublishResult(
                 status=PublishStatus.API_ERROR,
@@ -823,12 +875,12 @@ def publish_repair_pr(
 
     # 13. Create reviewable Draft Pull Request
     pr_title = format_repair_pr_title(cat_slug, config.run_id)
-    pr_body = format_repair_pr_body(diagnosis, patch, verification, config)
+    pr_body = format_repair_pr_body(diagnosis, patch, verification, config, target_branch=target_branch)
     pr_payload = {
         "title": pr_title,
         "body": pr_body,
         "head": branch_name,
-        "base": base_branch,
+        "base": target_branch,
         "draft": True,
     }
 

@@ -5,8 +5,7 @@ patcher, validator, sandbox, runner, publisher, security) to execute reproducibl
 scenarios and provide truthful, transparent telemetry to the presentation interface.
 """
 import os
-import subprocess
-import sys
+import tempfile
 import time
 import uuid
 from typing import Dict, Any, Optional, List
@@ -37,8 +36,16 @@ from agent.models import (
 )
 from agent.patcher import generate_patch
 from agent.providers import sanitize_error_message
-from agent.runner import VerificationRunner, apply_patch_to_disposable_tree
-from agent.sandbox import DockerSandbox
+from agent.runner import (
+    VerificationRunner,
+    apply_patch_to_disposable_tree,
+    copy_disposable_repo,
+)
+from agent.sandbox import (
+    DockerSandbox,
+    SandboxTimeoutError,
+    SandboxError,
+)
 from agent.publisher import publish_repair_pr
 from agent.security import redact_secrets, redact_data
 from agent.repository import validate_repository, disposable_working_copy
@@ -332,10 +339,23 @@ class RepositoryEvidenceMockProvider:
 
 def get_system_status() -> Dict[str, Any]:
     """Inspect local environment to return truthful system status flags."""
-    sandbox_no_quota = DockerSandbox(require_disk_quota=False)
+    cfg = load_config()
+    sandbox_no_quota = DockerSandbox(
+        image=cfg.sandbox_image,
+        require_disk_quota=False,
+    )
     docker_avail, docker_reason = sandbox_no_quota.is_available()
 
-    sandbox_with_quota = DockerSandbox(require_disk_quota=True)
+    sandbox_with_quota = DockerSandbox(
+        image=cfg.sandbox_image,
+        memory=cfg.sandbox_memory_limit,
+        cpus=cfg.sandbox_cpu_limit,
+        pids_limit=cfg.sandbox_pids_limit,
+        read_only_rootfs=cfg.sandbox_read_only_rootfs,
+        workspace_tmpfs_size=cfg.sandbox_storage_size,
+        storage_isolation_mode=cfg.sandbox_storage_mode,
+        require_disk_quota=True,
+    )
     quota_avail, quota_reason = sandbox_with_quota.is_available()
 
     has_gemini = bool(os.environ.get("GEMINI_API_KEY", "").strip())
@@ -356,29 +376,83 @@ def get_system_status() -> Dict[str, Any]:
     }
 
 
-def execute_live_pytest(repo_root: str) -> str:
-    """Execute live pytest suite on sample-app to demonstrate real local command execution."""
-    sample_app_tests = os.path.join(repo_root, "sample-app", "tests")
-    cmd = [sys.executable, "-m", "pytest", sample_app_tests, "-v", "--no-header", "--import-mode=importlib"]
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=repo_root,
-        )
-        output = proc.stdout + proc.stderr
-        status_line = "success" if proc.returncode == 0 else "failure"
+def execute_live_pytest(repo_root: str, config: Optional[AgentConfig] = None) -> str:
+    """Execute live pytest suite on sample-app strictly inside the isolated sandbox.
+
+    CRITICAL SECURITY INVARIANT:
+    Never executes target code on the host runner. If Docker isolation or quota
+    enforcement is unavailable, fails closed without host fallback.
+    """
+    cfg = config or load_config()
+    sandbox = DockerSandbox(
+        image=cfg.sandbox_image,
+        memory=cfg.sandbox_memory_limit,
+        cpus=cfg.sandbox_cpu_limit,
+        pids_limit=cfg.sandbox_pids_limit,
+        read_only_rootfs=cfg.sandbox_read_only_rootfs,
+        workspace_tmpfs_size=cfg.sandbox_storage_size,
+        storage_isolation_mode=cfg.sandbox_storage_mode,
+        require_disk_quota=True,
+    )
+    is_avail, avail_reason = sandbox.is_available()
+    if not is_avail:
         return (
-            "=== INSTALL LOGS ===\nDependencies verified.\n"
-            "=== LINT LOGS ===\nNo lint errors.\n"
-            f"=== TEST LOGS ===\n{output}\n"
-            "=== DOCKER LOGS ===\nNo docker logs\n"
-            f"=== STEP OUTCOMES ===\ninstall: success\nlint: success\ntest: {status_line}\ndocker: skipped\n"
+            "=== INSTALL LOGS ===\nCheck not run (container isolation unavailable)\n"
+            "=== LINT LOGS ===\nCheck not run (container isolation unavailable)\n"
+            f"=== TEST LOGS ===\n[BLOCKED] Docker sandbox unavailable: {avail_reason}\n"
+            "Refusing to execute unverified repository code on host runner.\n"
+            "=== DOCKER LOGS ===\nContainer execution blocked: Docker daemon or quota enforcement unavailable.\n"
+            "=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\ntest: failure\ndocker: failure\n"
         )
-    except Exception as e:
-        return f"=== TEST LOGS ===\nError executing live pytest: {e}\n=== STEP OUTCOMES ===\ntest: failure\n"
+
+    with tempfile.TemporaryDirectory() as disposable_dir:
+        try:
+            copy_disposable_repo(repo_root, disposable_dir)
+        except Exception as e:
+            return (
+                "=== INSTALL LOGS ===\nCheck not run\n"
+                "=== LINT LOGS ===\nCheck not run\n"
+                f"=== TEST LOGS ===\nFailed to prepare disposable workspace: {e}\n"
+                "=== DOCKER LOGS ===\nFailed to copy repository into disposable directory.\n"
+                "=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\ntest: failure\ndocker: failure\n"
+            )
+
+        has_sample = os.path.isdir(os.path.join(disposable_dir, "sample-app", "tests"))
+        test_target = "sample-app/tests" if has_sample else "tests"
+        cmd = ["pytest", test_target, "-v", "--no-header"]
+        cmd_display = " ".join(cmd)
+        try:
+            exit_code, stdout, stderr = sandbox.execute(
+                repo_dir=disposable_dir,
+                command=cmd,
+                timeout=cfg.verification_timeout_seconds,
+            )
+            output = stdout + ("\n" + stderr if stderr else "")
+            status_line = "success" if exit_code == 0 else "failure"
+            docker_msg = f"Container executed successfully using image '{cfg.sandbox_image}' with network isolation."
+            return (
+                "=== INSTALL LOGS ===\nCheck not run\n"
+                "=== LINT LOGS ===\nCheck not run\n"
+                f"=== TEST LOGS ===\n$ {cmd_display}\nExit code: {exit_code}\n\n{output}\n"
+                f"=== DOCKER LOGS ===\n{docker_msg}\n"
+                f"=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\ntest: {status_line}\ndocker: success\n"
+            )
+        except SandboxTimeoutError as e:
+            return (
+                "=== INSTALL LOGS ===\nCheck not run\n"
+                "=== LINT LOGS ===\nCheck not run\n"
+                f"=== TEST LOGS ===\nExecution timed out inside container sandbox: {e}\n"
+                "=== DOCKER LOGS ===\nContainer execution timed out.\n"
+                "=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\ntest: failure\ndocker: failure\n"
+            )
+        except SandboxError as e:
+            return (
+                "=== INSTALL LOGS ===\nCheck not run\n"
+                "=== LINT LOGS ===\nCheck not run\n"
+                f"=== TEST LOGS ===\nSandbox error: {e}\n"
+                "=== DOCKER LOGS ===\nContainer execution failed.\n"
+                "=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\ntest: failure\ndocker: failure\n"
+            )
 
 
 def run_scenario(
@@ -405,7 +479,7 @@ def run_scenario(
 
     # --- 1. Log Collection & Ingestion ---
     if scenario_id == "live_sample_app":
-        log_text = execute_live_pytest(root)
+        log_text = execute_live_pytest(root, config=cfg)
     else:
         fixture_file = os.path.join(root, scenario_meta["fixture_path"])
         if os.path.exists(fixture_file):
@@ -802,45 +876,74 @@ def run_repository_analysis(
                 test_target = "tests"
 
             if test_target:
-                try:
-                    cmd_tokens = [
-                        sys.executable,
-                        "-m",
-                        "pytest",
-                        test_target,
-                        "-v",
-                        "--no-header",
-                        "--import-mode=importlib",
-                    ]
-                    proc = subprocess.run(
-                        cmd_tokens,
-                        cwd=workspace,
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                    )
-                    output = proc.stdout + proc.stderr
-                    status_line = "success" if proc.returncode == 0 else "failure"
-                    cmd_display = f"{sys.executable} -m pytest {test_target} -v --no-header --import-mode=importlib"
+                # Security boundary: ALWAYS execute inside hardened container sandbox.
+                # Never execute target repository code on host Python or host subprocess.
+                sandbox = DockerSandbox(
+                    image=cfg.sandbox_image,
+                    memory=cfg.sandbox_memory_limit,
+                    cpus=cfg.sandbox_cpu_limit,
+                    pids_limit=cfg.sandbox_pids_limit,
+                    read_only_rootfs=cfg.sandbox_read_only_rootfs,
+                    workspace_tmpfs_size=cfg.sandbox_storage_size,
+                    storage_isolation_mode=cfg.sandbox_storage_mode,
+                    require_disk_quota=True,
+                )
+                avail, avail_reason = sandbox.is_available()
+                if not avail:
                     log_text = (
-                        "=== INSTALL LOGS ===\nDependencies verified in disposable workspace.\n"
-                        "=== LINT LOGS ===\nLint checks completed.\n"
-                        f"=== TEST LOGS ===\n"
-                        f"$ {cmd_display}\n"
-                        f"Exit code: {proc.returncode}\n\n"
-                        f"{output}\n"
-                        "=== DOCKER LOGS ===\nNo docker logs\n"
-                        f"=== STEP OUTCOMES ===\ninstall: success\nlint: success\n"
-                        f"test: {status_line}\ndocker: skipped\n"
+                        "=== INSTALL LOGS ===\nCheck not run (container isolation unavailable)\n"
+                        "=== LINT LOGS ===\nCheck not run (container isolation unavailable)\n"
+                        f"=== TEST LOGS ===\n[BLOCKED] Docker sandbox unavailable: {avail_reason}\n"
+                        "Refusing to execute unverified repository code on host runner.\n"
+                        "=== DOCKER LOGS ===\n"
+                        "Container execution blocked: Docker daemon or quota enforcement unavailable.\n"
+                        "=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\ntest: failure\ndocker: failure\n"
                     )
-                except Exception as e:
-                    log_text = (
-                        f"=== TEST LOGS ===\nError executing test suite: {e}\n"
-                        "=== STEP OUTCOMES ===\ninstall: success\nlint: success\ntest: failure\ndocker: skipped\n"
-                    )
+                else:
+                    norm_target = test_target.replace("\\", "/")
+                    cmd = ["pytest", norm_target, "-v", "--no-header"]
+                    cmd_display = " ".join(cmd)
+                    try:
+                        exit_code, stdout, stderr = sandbox.execute(
+                            repo_dir=workspace,
+                            command=cmd,
+                            timeout=cfg.verification_timeout_seconds,
+                        )
+                        output = stdout + ("\n" + stderr if stderr else "")
+                        status_line = "success" if exit_code == 0 else "failure"
+                        docker_info = (
+                            f"Executed inside container {cfg.sandbox_image} with network isolation.\n"
+                        )
+                        log_text = (
+                            "=== INSTALL LOGS ===\nCheck not run\n"
+                            "=== LINT LOGS ===\nCheck not run\n"
+                            f"=== TEST LOGS ===\n"
+                            f"$ {cmd_display}\n"
+                            f"Exit code: {exit_code}\n\n"
+                            f"{output}\n"
+                            f"=== DOCKER LOGS ===\n{docker_info}"
+                            f"=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\n"
+                            f"test: {status_line}\ndocker: success\n"
+                        )
+                    except SandboxTimeoutError as e:
+                        log_text = (
+                            "=== INSTALL LOGS ===\nCheck not run\n"
+                            "=== LINT LOGS ===\nCheck not run\n"
+                            f"=== TEST LOGS ===\nExecution timed out inside sandbox: {e}\n"
+                            "=== DOCKER LOGS ===\nExecution timed out.\n"
+                            "=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\ntest: failure\ndocker: failure\n"
+                        )
+                    except SandboxError as e:
+                        log_text = (
+                            "=== INSTALL LOGS ===\nCheck not run\n"
+                            "=== LINT LOGS ===\nCheck not run\n"
+                            f"=== TEST LOGS ===\nError executing in container sandbox: {e}\n"
+                            "=== DOCKER LOGS ===\nSandbox error occurred.\n"
+                            "=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\ntest: failure\ndocker: failure\n"
+                        )
             else:
                 log_text = (
-                    "=== STEP OUTCOMES ===\ninstall: success\nlint: success\ntest: skipped\ndocker: skipped\n"
+                    "=== STEP OUTCOMES ===\ninstall: skipped\nlint: skipped\ntest: skipped\ndocker: skipped\n"
                     "=== LOGS ===\nNo test suite or combined-logs.txt detected in repository.\n"
                 )
 
@@ -1517,10 +1620,10 @@ def run_repository_analysis(
                     patch_proposal.is_verified = True
                     verified_patches.append(patch_proposal)
 
-                    # Re-run checks on disposable workspace to detect remaining actionable failures
+                    # Re-run checks strictly inside container sandbox to detect remaining actionable failures
                     remaining_test_target = None
                     if os.path.isdir(os.path.join(workspace, "sample-app", "tests")):
-                        remaining_test_target = os.path.join("sample-app", "tests")
+                        remaining_test_target = "sample-app/tests"
                     elif os.path.isdir(os.path.join(workspace, "tests")):
                         remaining_test_target = "tests"
 
@@ -1528,24 +1631,14 @@ def run_repository_analysis(
                     remaining_output = ""
                     if remaining_test_target:
                         try:
-                            cmd_tokens = [
-                                sys.executable,
-                                "-m",
-                                "pytest",
-                                remaining_test_target,
-                                "-v",
-                                "--no-header",
-                            ]
-                            proc = subprocess.run(
-                                cmd_tokens,
-                                cwd=workspace,
-                                capture_output=True,
-                                text=True,
-                                timeout=30,
+                            r_code, r_out, r_err = runner.sandbox.execute(
+                                repo_dir=workspace,
+                                command=["pytest", remaining_test_target, "-v", "--no-header"],
+                                timeout=cfg.verification_timeout_seconds,
                             )
-                            if proc.returncode != 0:
+                            if r_code != 0:
                                 remaining_failure_found = True
-                                remaining_output = proc.stdout + proc.stderr
+                                remaining_output = r_out + ("\n" + r_err if r_err else "")
                         except Exception as e:
                             remaining_failure_found = True
                             remaining_output = str(e)

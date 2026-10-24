@@ -85,6 +85,13 @@ def load_config(env: Optional[Mapping[str, str]] = None) -> AgentConfig:
     raw_publisher_token = env.get("REPAIR_PUBLISHER_TOKEN")
     publisher_token = raw_publisher_token.strip() if raw_publisher_token and raw_publisher_token.strip() else None
 
+    event_name = env.get("EVENT_NAME") or env.get("GITHUB_EVENT_NAME")
+    ref_name = env.get("REF_NAME") or env.get("GITHUB_REF_NAME")
+    head_ref = env.get("HEAD_REF") or env.get("GITHUB_HEAD_REF")
+    base_ref = env.get("BASE_REF") or env.get("GITHUB_BASE_REF")
+    pr_head_sha = env.get("PR_HEAD_SHA")
+    pr_head_repo = env.get("PR_HEAD_REPO")
+
     return AgentConfig(
         ai_provider=ai_provider,
         anthropic_api_key=env.get("ANTHROPIC_API_KEY"),
@@ -114,6 +121,12 @@ def load_config(env: Optional[Mapping[str, str]] = None) -> AgentConfig:
         github_actor=github_actor,
         enable_repair_pr=enable_repair_pr,
         max_prompt_tokens=max_prompt_tokens,
+        event_name=event_name,
+        ref_name=ref_name,
+        head_ref=head_ref,
+        base_ref=base_ref,
+        pr_head_sha=pr_head_sha,
+        pr_head_repo=pr_head_repo,
     )
 
 

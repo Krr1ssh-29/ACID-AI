@@ -55,6 +55,13 @@ def make_valid_patch(diff: str, path: str = "sample-app/app.py", explanation: st
     )
 
 
+@pytest.fixture(autouse=True)
+def mock_default_sandbox_execute():
+    """Default unit-test mock for DockerSandbox: simulates clean execution unless overridden."""
+    with patch("agent.sandbox.DockerSandbox.execute", return_value=(0, "3 passed in 0.05s", "")):
+        yield
+
+
 @pytest.fixture
 def fake_git_repo():
     """Create a minimal temporary Git repository with failing evidence."""
@@ -460,14 +467,10 @@ def test_10_accurate_final_reporting_for_partial_repair(fake_git_repo):
 
     cfg = AgentConfig(max_repair_attempts=2)
 
-    fake_proc = MagicMock()
-    fake_proc.returncode = 1
-    fake_proc.stdout = "FAILED sample-app/test_app.py::test_remaining"
-    fake_proc.stderr = ""
-
+    remaining_res = (1, "FAILED sample-app/test_app.py::test_remaining", "")
     with patch("dashboard.engine.VerificationRunner.verify", side_effect=[pass_res, fail_res]), \
          patch("dashboard.engine.generate_patch", side_effect=[patch_1, patch_2]), \
-         patch("dashboard.engine.subprocess.run", return_value=fake_proc):
+         patch("agent.sandbox.DockerSandbox.execute", return_value=remaining_res):
 
         result = run_repository_analysis(
             repo_path=fake_git_repo,
