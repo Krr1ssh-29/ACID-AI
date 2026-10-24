@@ -48,6 +48,7 @@ SAFE_PYTEST_OPTIONS = {
     "--verbose",
     "--quiet",
     "--disable-warnings",
+    "--no-header",
 }
 
 SAFE_PYTEST_PREFIX_OPTIONS = (
@@ -320,6 +321,10 @@ class VerificationRunner:
             memory=self.config.sandbox_memory_limit,
             cpus=self.config.sandbox_cpu_limit,
             pids_limit=self.config.sandbox_pids_limit,
+            read_only_rootfs=self.config.sandbox_read_only_rootfs,
+            workspace_tmpfs_size=self.config.sandbox_storage_size,
+            storage_isolation_mode=self.config.sandbox_storage_mode,
+            require_disk_quota=True,
         )
         self.repo_root = repo_root or "."
 
@@ -369,7 +374,6 @@ class VerificationRunner:
                 attempt=attempt,
             )
 
-        cmd_list = commands or self.config.verification_commands
         executed_cmds: List[str] = []
         captured_output: List[str] = []
 
@@ -409,8 +413,22 @@ class VerificationRunner:
                     attempt=attempt,
                 )
 
+            # Determine command list (explicit or auto-detected from workspace)
+            if commands is not None:
+                active_cmds = commands
+            elif os.path.isdir(os.path.join(disposable_dir, "sample-app", "tests")):
+                active_cmds = ["pytest sample-app/tests/"]
+                if os.path.isfile(os.path.join(disposable_dir, ".flake8")):
+                    active_cmds.append("flake8 sample-app/")
+            elif os.path.isdir(os.path.join(disposable_dir, "tests")):
+                active_cmds = ["pytest tests/"]
+                if os.path.isfile(os.path.join(disposable_dir, ".flake8")):
+                    active_cmds.append("flake8")
+            else:
+                active_cmds = self.config.verification_commands
+
             # 5. Execute allowlisted verification commands inside sandbox
-            for cmd_str in cmd_list:
+            for cmd_str in active_cmds:
                 if not is_command_allowlisted(cmd_str):
                     return VerificationResult(
                         status=VerificationStatus.INFRASTRUCTURE_FAILURE,
@@ -509,17 +527,17 @@ def run_repair_loop(
     sandbox: Optional[SandboxIsolationBackend] = None,
     provider: Optional[BaseAIProvider] = None,
     commands: Optional[List[str]] = None,
+    max_attempts: Optional[int] = None,
 ) -> Tuple[PatchProposal, VerificationResult]:
-    """Execute the bounded 2-attempt self-correction repair loop.
+    """Execute the bounded autonomous self-correction repair loop.
 
-    Attempt 1:
-      1. Generates candidate patch from structured diagnosis.
-      2. Validates patch safety policies.
-      3. Verifies patch execution inside container sandbox.
-      4. If exit code 0: returns verified patch.
-    Attempt 2 (Self-Correction):
-      If Attempt 1 verification failed, feeds failure output back to AI model
-      for one bounded correction attempt before clean termination.
+    1. Generates candidate patch from structured diagnosis (with failure feedback on retries).
+    2. Validates patch safety policies.
+    3. Detects repeated identical or ineffective patches and terminates if progress stalls.
+    4. Verifies patch execution inside container sandbox.
+    5. Returns verified patch if all checks exit with code 0.
+    6. If verification fails and retry budget remains, feeds failure output to next attempt.
+    7. Cleanly terminates on retry exhaustion, repeated patch, or safety/infrastructure failure.
 
     Args:
         diagnosis: Phase 03 structured AnalysisResult.
@@ -528,41 +546,60 @@ def run_repair_loop(
         sandbox: Optional sandbox isolation backend.
         provider: Optional AI provider backend.
         commands: Optional verification command overrides.
+        max_attempts: Optional maximum attempts override (defaults to config.max_repair_attempts or 3).
 
     Returns:
         Tuple of (final_patch_proposal, final_verification_result).
     """
     runner = VerificationRunner(sandbox=sandbox, config=config, repo_root=repo_root)
+    limit = max_attempts or (config.max_repair_attempts if config else 3)
 
-    # --- Attempt 1 ---
-    patch_1 = generate_patch(
-        diagnosis=diagnosis,
-        config=config,
-        provider=provider,
-        repo_root=repo_root,
-    )
+    seen_diffs: List[str] = []
+    latest_patch: Optional[PatchProposal] = None
+    latest_verif: Optional[VerificationResult] = None
+    failure_feedback: Optional[str] = None
 
-    verif_1 = runner.verify(patch_1, commands=commands, attempt=1)
-    if verif_1.is_verified:
-        return patch_1, verif_1
+    for attempt in range(1, limit + 1):
+        # 1. Generate candidate patch (with failure feedback on retries)
+        patch = generate_patch(
+            diagnosis=diagnosis,
+            config=config,
+            provider=provider,
+            repo_root=repo_root,
+            source_snippets=failure_feedback,
+        )
+        latest_patch = patch
 
-    # If patch was rejected by policy or infrastructure failed, do not retry blindly
-    if verif_1.status in (VerificationStatus.PATCH_REJECTED, VerificationStatus.INFRASTRUCTURE_FAILURE):
-        return patch_1, verif_1
+        # 2. Check for repeated identical or ineffective patch
+        norm_diff = patch.diff.strip() if patch.diff else ""
+        if norm_diff and norm_diff in seen_diffs:
+            latest_verif = VerificationResult(
+                status=VerificationStatus.TEST_FAILED,
+                is_verified=False,
+                exit_code=1,
+                error_message="Progress stalled: Repeated identical patch detected.",
+                attempt=attempt,
+            )
+            return latest_patch, latest_verif
+        if norm_diff:
+            seen_diffs.append(norm_diff)
 
-    # --- Attempt 2: Self-Correction with verification feedback ---
-    failure_feedback = (
-        f"Attempt 1 patch verification failed with output:\n{verif_1.output[-3000:]}\n"
-        f"Error: {verif_1.error_message}"
-    )
+        # 3. Verify in sandbox
+        verif = runner.verify(patch, commands=commands, attempt=attempt)
+        latest_verif = verif
 
-    patch_2 = generate_patch(
-        diagnosis=diagnosis,
-        config=config,
-        provider=provider,
-        repo_root=repo_root,
-        source_snippets=failure_feedback,
-    )
+        # If verified, return immediately
+        if verif.is_verified:
+            return patch, verif
 
-    verif_2 = runner.verify(patch_2, commands=commands, attempt=2)
-    return patch_2, verif_2
+        # If patch was rejected by policy or infrastructure failed, do not retry blindly
+        if verif.status in (VerificationStatus.PATCH_REJECTED, VerificationStatus.INFRASTRUCTURE_FAILURE):
+            return patch, verif
+
+        # 4. Construct failure feedback for next attempt
+        failure_feedback = (
+            f"Attempt {attempt} patch verification failed with output:\n{verif.output[-3000:]}\n"
+            f"Error: {verif.error_message}"
+        )
+
+    return latest_patch, latest_verif

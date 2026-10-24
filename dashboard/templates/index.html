@@ -32,19 +32,138 @@
         <div class="status-pill" id="gemini-status-pill">
           <span class="status-dot"></span> Checking Gemini...
         </div>
-        <button class="btn-secondary" id="btn-reset" title="Clear Demo History">Reset Demo</button>
+        <button class="btn-secondary" id="btn-reset" title="Clear Run History">Reset Runs</button>
       </div>
     </header>
 
-    <!-- Scenario Controls & Provider Toggle -->
-    <section class="control-strip glass-panel" aria-labelledby="scenario-heading">
+    <!-- Mode Selector Tabs -->
+    <div class="mode-tabs-wrapper">
+      <button class="mode-tab active" id="tab-repo-mode" type="button">
+        <span class="tab-icon">📁</span>
+        <span class="tab-title">Repository-First Analysis</span>
+        <span class="tab-badge live">PRIMARY</span>
+      </button>
+      <button class="mode-tab" id="tab-demo-mode" type="button">
+        <span class="tab-icon">🧪</span>
+        <span class="tab-title">Demonstration Scenarios</span>
+        <span class="tab-badge mock">OFFLINE DEMO</span>
+      </button>
+    </div>
+
+    <!-- 1. Primary Repository-First Control Console -->
+    <section class="control-strip glass-panel" id="panel-repo-first" aria-labelledby="repo-heading">
       <div class="control-title-row">
-        <h2 id="scenario-heading">Select Reproducible Demonstration Scenario</h2>
+        <div>
+          <h2 id="repo-heading">Target Repository &amp; Execution Configuration</h2>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+            Inspect a local repository, provision an ephemeral workspace copy, and run isolated analysis &amp; self-healing.
+          </p>
+        </div>
         <div class="provider-toggle-group">
           <span class="toggle-label">AI Engine Mode:</span>
           <div class="toggle-switch-wrapper" role="radiogroup" aria-label="AI Engine Mode">
+            <button class="toggle-btn active" id="toggle-repo-mock" role="radio" aria-checked="true">Deterministic Mock (Offline Safe)</button>
+            <button class="toggle-btn" id="toggle-repo-gemini" role="radio" aria-checked="false">Live Gemini API</button>
+            <button class="toggle-btn" id="toggle-repo-claude" role="radio" aria-checked="false">Live Claude API</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Repo Path Input & Inspection Bar -->
+      <div class="repo-selection-bar">
+        <div class="repo-input-wrapper">
+          <span class="input-icon">📂</span>
+          <input
+            type="text"
+            id="input-repo-path"
+            class="repo-path-input"
+            placeholder="Loading current repository path..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button class="btn-secondary" id="btn-inspect-repo" type="button">🔍 Inspect Repository</button>
+        </div>
+      </div>
+
+      <!-- Repository Identity Card -->
+      <div class="repo-identity-card" id="repo-identity-card">
+        <div class="repo-meta-row">
+          <div class="meta-pill-group">
+            <span class="repo-meta-pill branch" id="pill-branch">🌿 Branch: <strong id="val-branch">detecting...</strong></span>
+            <span class="repo-meta-pill commit" id="pill-commit">🔖 Commit: <strong id="val-commit">detecting...</strong></span>
+            <span class="repo-meta-pill status" id="pill-clean">Working Tree: <strong id="val-clean">detecting...</strong></span>
+            <span class="repo-meta-pill remote" id="pill-remote">🔗 Remote: <strong id="val-remote">local only</strong></span>
+            <span class="repo-meta-pill isolation" id="pill-isolation">🛡️ Isolation: <strong>Disposable Workspace (Zero Host Mutation)</strong></span>
+          </div>
+        </div>
+        <div class="repo-details-row">
+          <div class="repo-tags-container">
+            <span class="tags-label">Detected Manifests &amp; Test Suites:</span>
+            <span id="repo-detected-tags"><span class="repo-tag">Scanning...</span></span>
+          </div>
+          <div id="repo-validation-feedback" class="repo-validation-feedback"></div>
+        </div>
+      </div>
+
+      <!-- Draft PR Delivery Settings (Opt-in) -->
+      <div class="repo-delivery-settings" style="margin-top:12px;padding:12px 16px;background:rgba(0,0,0,0.25);border:1px solid var(--border-subtle);border-radius:var(--radius-md);">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text-primary);">
+            <input type="checkbox" id="chk-enable-pr" style="accent-color:var(--brand-primary);width:16px;height:16px;cursor:pointer;">
+            <span>Enable Verified Draft PR Delivery <span class="tab-badge mock" style="font-size:10px;padding:1px 6px;">OPT-IN</span></span>
+          </label>
+          <div id="delivery-token-wrapper" style="display:flex;align-items:center;gap:8px;font-size:12px;">
+            <span style="color:var(--text-muted);">GitHub Token:</span>
+            <input type="password" id="input-github-token" placeholder="ghp_... (or env GITHUB_TOKEN)" autocomplete="off" spellcheck="false" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border-subtle);background:rgba(15,23,42,0.8);color:#fff;font-family:var(--font-mono);font-size:11px;width:240px;">
+          </div>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+          Kept disabled by default. When enabled and verified, ACID AI creates a dedicated repair branch and opens a reviewable Draft Pull Request. Token is kept in-memory and never logged or included in AI prompts.
+        </p>
+      </div>
+
+      <!-- Primary Action & Status Bar -->
+      <div class="repo-action-bar">
+        <div class="action-btn-group">
+          <button class="btn-primary-action" id="btn-run-analysis" type="button">
+            <span class="btn-glow"></span>
+            <span class="btn-icon">⚡</span>
+            <span class="btn-text">Run Analysis &amp; Repair</span>
+          </button>
+        </div>
+        <div class="run-status-area" id="run-status-area">
+          <div class="run-status-card" id="run-status-card">
+            <div class="run-status-indicator idle" id="run-status-dot"></div>
+            <div class="run-status-details">
+              <div class="run-status-title" id="run-status-title">Status: Ready for Analysis</div>
+              <div class="run-status-subtitle" id="run-status-subtitle">Select repository and click Run Analysis &amp; Repair</div>
+            </div>
+            <div class="run-record-tags" id="run-record-tags">
+              <span class="record-tag" id="tag-run-id">ID: None</span>
+              <span class="record-tag" id="tag-run-mode">Mode: Mock</span>
+              <span class="record-tag" id="tag-run-attempts">Attempts: 0/3</span>
+              <span class="record-tag" id="tag-run-time">Duration: 0.0s</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Demonstration Scenarios Panel (Separated Demonstration Mode) -->
+    <section class="control-strip glass-panel hidden" id="panel-demo-mode" aria-labelledby="scenario-heading">
+      <div class="control-title-row">
+        <div>
+          <h2 id="scenario-heading">Select Reproducible Demonstration Scenario</h2>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+            Offline demonstration mode: Reproduce failure triage across 6 canned scenarios with zero API spend.
+          </p>
+        </div>
+        <div class="provider-toggle-group">
+          <span class="toggle-label">AI Engine Mode:</span>
+          <div class="toggle-switch-wrapper" role="radiogroup" aria-label="Demo Engine Mode">
             <button class="toggle-btn active" id="toggle-mock" role="radio" aria-checked="true">Deterministic Mock (Offline Safe)</button>
             <button class="toggle-btn" id="toggle-gemini" role="radio" aria-checked="false">Live Gemini API</button>
+            <button class="toggle-btn" id="toggle-claude" role="radio" aria-checked="false">Live Claude API</button>
           </div>
         </div>
       </div>
@@ -114,6 +233,27 @@
 
       <!-- Right Column: AI Triage, Diff Review, Safety & Delivery -->
       <section class="right-column">
+        <!-- Autonomous Repair & Retry Progress Card -->
+        <div class="glass-panel" id="card-attempts">
+          <div class="card-header">
+            <h3><span>🔄</span> Autonomous Repair Loop</h3>
+            <span class="badge-pill" id="badge-final-status" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3)">AWAITING RUN</span>
+          </div>
+          <div class="card-body">
+            <div class="attempts-summary-grid" id="attempts-summary-grid">
+              <div class="meta-box"><span class="meta-box-label">Final Status</span><div class="meta-box-val" id="val-loop-final-status">Idle</div></div>
+              <div class="meta-box"><span class="meta-box-label">Attempts Used</span><div class="meta-box-val" id="val-loop-attempts-count">0 / 3</div></div>
+              <div class="meta-box"><span class="meta-box-label">Verified Patches</span><div class="meta-box-val" id="val-loop-verified-patches">0</div></div>
+            </div>
+            <div class="stop-reason-box" id="stop-reason-box" style="margin-top:10px;padding:8px 12px;background:rgba(0,0,0,0.25);border-radius:6px;font-size:12px;color:var(--text-secondary);display:none;">
+              <strong>Stop / Exit Reason:</strong> <span id="val-stop-reason">-</span>
+            </div>
+            <div class="attempts-timeline" id="attempts-timeline" style="margin-top:12px;">
+              <!-- Injected via app.js -->
+            </div>
+          </div>
+        </div>
+
         <!-- AI Diagnosis Card -->
         <div class="glass-panel" id="card-diagnosis">
           <div class="card-header">
@@ -187,6 +327,62 @@
             </div>
           </div>
         </div>
+
+        <!-- Final Run Report Card (Phase 5 & QA Fix 2) -->
+        <div class="glass-panel" id="card-final-report">
+          <div class="card-header">
+            <h3><span>📑</span> Verified Final Report</h3>
+            <span class="badge-pill" id="report-outcome-badge" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3)">AWAITING RUN</span>
+          </div>
+          <div class="card-body">
+            <!-- Level 1: Plain-English Run Summary -->
+            <div class="plain-english-summary-box" id="report-plain-summary-box" style="margin-bottom:14px;padding:12px 16px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:8px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:16px;">💡</span>
+                <h4 style="margin:0;font-size:13px;font-weight:700;color:#c7d2fe;text-transform:uppercase;letter-spacing:0.5px;">Plain-English Run Summary</h4>
+              </div>
+              <div id="report-summary-content" style="font-size:12px;line-height:1.6;color:var(--text-secondary);">
+                <p style="margin:0 0 6px 0;" id="summary-outcome"><strong>Outcome:</strong> <span>Awaiting run...</span></p>
+                <p style="margin:0 0 6px 0;" id="summary-what"><strong>What Happened:</strong> <span>-</span></p>
+                <p style="margin:0 0 6px 0;" id="summary-why"><strong>Why It Happened:</strong> <span>-</span></p>
+                <p style="margin:0 0 6px 0;" id="summary-attempted"><strong>What ACID AI Attempted:</strong> <span>-</span></p>
+                <p style="margin:0 0 6px 0;" id="summary-worked"><strong>Did the Repair Work:</strong> <span>-</span></p>
+                <p style="margin:0 0 6px 0;" id="summary-stopped"><strong>Why ACID AI Stopped:</strong> <span>-</span></p>
+                <p style="margin:0 0 6px 0;" id="summary-next"><strong>What to Do Next:</strong> <span>-</span></p>
+                <p style="margin:0;" id="summary-pub"><strong>Publication Status:</strong> <span>-</span></p>
+              </div>
+            </div>
+
+            <!-- Level 2: Technical Overview -->
+            <div class="report-overview-grid" id="report-overview-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;">
+              <div class="meta-box"><span class="meta-box-label">Run ID</span><div class="meta-box-val" id="report-val-run-id">None</div></div>
+              <div class="meta-box"><span class="meta-box-label">Overall Outcome</span><div class="meta-box-val" id="report-val-outcome">-</div></div>
+              <div class="meta-box"><span class="meta-box-label">Attempts / Budget</span><div class="meta-box-val" id="report-val-attempts">0</div></div>
+              <div class="meta-box"><span class="meta-box-label">Delivery Outcome</span><div class="meta-box-val" id="report-val-delivery">Disabled</div></div>
+            </div>
+
+            <!-- Scope & Truthfulness Disclaimer -->
+            <div class="report-scope-box" id="report-scope-box" style="margin-top:12px;padding:10px 14px;background:rgba(15,23,42,0.6);border-left:3px solid var(--brand-primary);border-radius:4px;font-size:12px;color:var(--text-secondary);line-height:1.5;">
+              <strong style="color:var(--text-primary);">Verification Scope:</strong> <span id="report-val-scope">Awaiting run completion to render evidence-based verification scope statement.</span>
+            </div>
+
+            <!-- Actions Row: View Report, Download PDF, Export Markdown, Export JSON -->
+            <div class="report-actions-row" style="margin-top:14px;display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">
+              <button class="btn-secondary" id="btn-view-report" type="button" disabled style="padding:6px 14px;font-size:12px;">
+                <span>📄</span> View Full Report
+              </button>
+              <button class="btn-secondary" id="btn-export-pdf" type="button" disabled style="padding:6px 14px;font-size:12px;">
+                <span>📥</span> Download Report (PDF)
+              </button>
+              <button class="btn-secondary" id="btn-export-markdown" type="button" disabled style="padding:6px 14px;font-size:12px;">
+                <span>⬇️</span> Export Markdown
+              </button>
+              <button class="btn-secondary" id="btn-export-json" type="button" disabled style="padding:6px 14px;font-size:12px;">
+                <span>⬇️</span> Export JSON
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 
@@ -200,8 +396,8 @@
         <thead>
           <tr>
             <th>Run ID</th>
-            <th>Scenario</th>
-            <th>Type</th>
+            <th>Target / Scenario</th>
+            <th>Mode</th>
             <th>Pipeline Status</th>
             <th>Verification Status</th>
             <th>Timestamp</th>
@@ -212,6 +408,31 @@
         </tbody>
       </table>
     </section>
+  </div>
+
+  <!-- Modal Dialog for Viewing Full Final Report -->
+  <div class="modal-overlay hidden" id="modal-report-overlay">
+    <div class="modal-container glass-panel">
+      <div class="modal-header">
+        <div class="modal-title" style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">📑</span>
+          <h3 id="modal-report-title" style="font-size:16px;font-weight:700;">Final Run Report</h3>
+        </div>
+        <div class="modal-actions" style="display:flex;gap:8px;">
+          <button class="btn-secondary" id="btn-modal-pdf" style="padding:4px 12px;font-size:11px;">Download PDF</button>
+          <button class="btn-secondary" id="btn-modal-copy" style="padding:4px 12px;font-size:11px;">Copy Markdown</button>
+          <button class="btn-secondary" id="btn-modal-close" style="padding:4px 12px;font-size:11px;">✕ Close</button>
+        </div>
+      </div>
+      <div class="modal-body" style="padding:16px;overflow-y:auto;max-height:calc(85vh - 70px);">
+        <!-- Plain English Summary in Modal -->
+        <div class="modal-summary-box" id="modal-summary-box" style="margin-bottom:12px;padding:12px 16px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:8px;font-size:12px;line-height:1.6;color:var(--text-secondary);display:none;">
+          <h4 style="margin:0 0 6px 0;font-size:12px;font-weight:700;color:#c7d2fe;text-transform:uppercase;">Plain-English Summary</h4>
+          <div id="modal-summary-content"></div>
+        </div>
+        <pre class="report-markdown-pre" id="modal-report-content" style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;color:#e2e8f0;background:rgba(0,0,0,0.3);padding:14px;border-radius:6px;line-height:1.6;">Loading report...</pre>
+      </div>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>

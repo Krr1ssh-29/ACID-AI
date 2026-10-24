@@ -120,6 +120,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-test
     if: always()
+    # Least-Privilege Permissions Architecture:
+    # Ambient workflow permissions are intentionally restricted to contents: read to prevent
+    # granting blanket write access to all pipeline runs or untrusted PR triggers.
+    # Repair branch creation requires contents: write on the GitHub API. Rather than granting
+    # broad ambient write access to the entire job, Draft PR publishing is enabled via a dedicated,
+    # fine-grained token secret (REPAIR_PUBLISHER_TOKEN) scoped strictly to contents:write on this repo.
+    # If REPAIR_PUBLISHER_TOKEN is not configured or ENABLE_REPAIR_PR is false (default), ACID AI
+    # operates safely in read-only mode, uploading reports and patches as CI artifacts.
     permissions:
       pull-requests: write
       issues: write
@@ -150,9 +158,23 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPAIR_PUBLISHER_TOKEN: ${{ secrets.REPAIR_PUBLISHER_TOKEN }}
+          GENERATE_PATCH: ${{ secrets.GENERATE_PATCH || 'false' }}
+          ENABLE_REPAIR_PR: ${{ secrets.ENABLE_REPAIR_PR || 'false' }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO_NAME: ${{ github.repository }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
         run: |
           python agent/self_healing_agent.py
+
+      - name: Upload ACID AI Reports and Delivery Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acid-ai-delivery-artifacts
+          path: |
+            reports/
+            agent-patch.diff
+            agent-analysis.json
+          if-no-files-found: ignore

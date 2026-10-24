@@ -24,9 +24,11 @@ to fix a CI/CD pipeline failure based on a validated root cause diagnosis.
 
 CRITICAL CONSTRAINTS & SECURITY POLICIES:
 1. Unified Diff Format: Output standard unified diff format (with --- a/path and +++ b/path headers).
-2. Relative Paths: Always use repository-relative file paths (e.g., sample-app/app.py).
-3. Allowed Targets: Only modify application code, tests, or manifests
-   (e.g., sample-app/, src/, tests/, requirements.txt).
+2. Relative Paths & Real Targets: Always use repository-relative file paths for files that actually
+   exist in the target repository (e.g., src/main.py, tests/test_main.py, app.py). Target files must match
+   the files present in the provided failure context and source snippets. NEVER invent directory prefixes
+   or target nonexistent files.
+3. Allowed Targets: Only modify application code, tests, or manifests that actually exist in this repository.
 4. STRICTLY FORBIDDEN:
    - NEVER touch .github/ workflows, .git/ internals, .env files, or any credentials/secrets.
    - NEVER use absolute paths or directory traversal sequences (..).
@@ -61,11 +63,22 @@ def build_patch_prompt(
     """
     from agent.security import sanitize_for_prompt
 
-    categories = ", ".join(diagnosis.failure_types) or "unknown"
+    raw_types = getattr(diagnosis, "failure_types", None) or (
+        diagnosis.get("failure_types", []) if isinstance(diagnosis, dict) else []
+    )
+    categories = ", ".join(raw_types) or "unknown"
+
+    raw_fixes = getattr(diagnosis, "fixes", None) or (
+        diagnosis.get("fixes", []) if isinstance(diagnosis, dict) else []
+    )
     fixes_formatted = []
-    for f in diagnosis.fixes:
-        code_part = f"\n  Code/Command: {f.code}" if f.code else ""
-        fixes_formatted.append(f"- [{f.type.upper()}] {f.title}: {f.description}{code_part}")
+    for f in raw_fixes:
+        f_type = getattr(f, "type", None) or (f.get("type", "") if isinstance(f, dict) else "")
+        f_title = getattr(f, "title", None) or (f.get("title", "") if isinstance(f, dict) else "")
+        f_desc = getattr(f, "description", None) or (f.get("description", "") if isinstance(f, dict) else "")
+        f_code = getattr(f, "code", None) or (f.get("code", "") if isinstance(f, dict) else "")
+        code_part = f"\n  Code/Command: {f_code}" if f_code else ""
+        fixes_formatted.append(f"- [{str(f_type).upper()}] {f_title}: {f_desc}{code_part}")
     fixes_text = "\n".join(fixes_formatted) if fixes_formatted else "None provided"
 
     snippet_section = ""
@@ -73,8 +86,14 @@ def build_patch_prompt(
         clean_snippets = sanitize_for_prompt(source_snippets, max_chars=4000)
         snippet_section = f"\nRelevant Source Code Snippets:\n{clean_snippets}\n"
 
-    clean_root_cause = sanitize_for_prompt(diagnosis.root_cause, max_chars=2000)
-    clean_log_evidence = sanitize_for_prompt(diagnosis.log_evidence or "None", max_chars=3000)
+    raw_rc = getattr(diagnosis, "root_cause", None) or (
+        diagnosis.get("root_cause", "") if isinstance(diagnosis, dict) else ""
+    )
+    raw_le = getattr(diagnosis, "log_evidence", None) or (
+        diagnosis.get("log_evidence", "None") if isinstance(diagnosis, dict) else "None"
+    )
+    clean_root_cause = sanitize_for_prompt(raw_rc or "", max_chars=2000)
+    clean_log_evidence = sanitize_for_prompt(raw_le or "None", max_chars=3000)
 
     return (
         "Generate a targeted bug-fix patch in unified diff format for the following failure:\n\n"
@@ -86,6 +105,7 @@ def build_patch_prompt(
         f"{snippet_section}"
         "</untrusted_failure_context>\n\n"
         "Generate a minimal unified diff patch addressing this root cause. "
+        "CRITICAL: Target only real files that exist in the target repository context above. "
         "Respond with ONLY valid JSON containing 'explanation' and 'diff'."
     )
 
@@ -193,16 +213,29 @@ class PatchGenerator:
             explanation, diff = parse_patch_response(raw_text)
         except Exception as e:
             # Model output error, provider outage, or parse failure
+            err_msg = str(e)
+            if "CONTRACT_AMBIGUITY" in err_msg:
+                err_code = "CONTRACT_AMBIGUITY"
+                explanation = "Candidate patch skipped: Intended contract between test and implementation is ambiguous."
+            elif "LIVE_AI_REQUIRED" in err_msg:
+                err_code = "LIVE_AI_REQUIRED"
+                explanation = "Candidate patch generation unavailable: Live AI credentials required."
+            elif "PROVIDER_UNAVAILABLE" in err_msg:
+                err_code = "PROVIDER_UNAVAILABLE"
+                explanation = "Candidate patch generation unavailable: Provider unavailable."
+            else:
+                err_code = "GENERATION_FAILED"
+                explanation = f"Failed to generate candidate patch: {e}"
             return PatchProposal(
                 status=PatchStatus.FAILED,
-                explanation="",
+                explanation=explanation,
                 diff="",
                 files=[],
                 validation=PatchValidationResult(
                     is_valid=False,
                     errors=[
                         PatchValidationError(
-                            code="GENERATION_FAILED",
+                            code=err_code,
                             message=f"Failed to generate candidate patch: {e}",
                         )
                     ],

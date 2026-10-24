@@ -423,6 +423,7 @@ def test_e2e_publication_fork_403_graceful_fallback(tmp_path, monkeypatch):
         repo_name="fork-user/repo",
         pr_number="15",
         run_id="999",
+        enable_repair_pr=True,
     )
 
     mock_patch = PatchProposal(
@@ -472,6 +473,7 @@ def test_e2e_duplicate_failure_event_idempotency():
         github_token="test_github_token",
         repo_name="org/repo",
         run_id="12345",
+        enable_repair_pr=True,
     )
 
     mock_patch = PatchProposal(
@@ -519,6 +521,7 @@ def test_e2e_anti_recursion_safeguard_blocks_bot_actor():
         github_token="test_github_token",
         repo_name="org/repo",
         run_id="999",
+        enable_repair_pr=True,
     )
 
     mock_patch = PatchProposal(status=PatchStatus.VALIDATED, files=[FilePatch(path="x", additions=1, deletions=0)])

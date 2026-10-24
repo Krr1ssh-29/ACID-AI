@@ -485,8 +485,18 @@ def test_run_repair_loop_self_corrects_attempt_2():
         with open(os.path.join(host_repo, "sample-app", "app.py"), "w") as f:
             f.write("return 500\n")
 
-        valid_patch_json = json.dumps({
-            "explanation": "Fix assertion in sample-app/app.py",
+        patch_1_json = json.dumps({
+            "explanation": "Attempt 1: try return 300",
+            "diff": (
+                "--- a/sample-app/app.py\n"
+                "+++ b/sample-app/app.py\n"
+                "@@ -1 +1 @@\n"
+                "-return 500\n"
+                "+return 300\n"
+            ),
+        })
+        patch_2_json = json.dumps({
+            "explanation": "Attempt 2: fix assertion with 200",
             "diff": (
                 "--- a/sample-app/app.py\n"
                 "+++ b/sample-app/app.py\n"
@@ -497,7 +507,7 @@ def test_run_repair_loop_self_corrects_attempt_2():
         })
 
         mock_provider = MagicMock()
-        mock_provider.generate_text.return_value = valid_patch_json
+        mock_provider.generate_text.side_effect = [patch_1_json, patch_2_json]
 
         sandbox = AlternatingMockSandbox()
         final_patch, final_result = run_repair_loop(

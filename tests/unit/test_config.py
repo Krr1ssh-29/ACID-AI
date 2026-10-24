@@ -88,3 +88,16 @@ def test_validate_credentials_gemini():
     # Present key
     cfg_valid = AgentConfig(ai_provider="gemini", gemini_api_key="valid-gemini-test-key")
     assert validate_credentials(cfg_valid) is None
+
+
+def test_load_config_repair_publisher_token():
+    """Verify loading and normalization of REPAIR_PUBLISHER_TOKEN."""
+    # Unset defaults to None
+    assert load_config({}).publisher_token is None
+
+    # Empty string or whitespace normalizes to None
+    assert load_config({"REPAIR_PUBLISHER_TOKEN": ""}).publisher_token is None
+    assert load_config({"REPAIR_PUBLISHER_TOKEN": "   "}).publisher_token is None
+
+    # Populated token is extracted cleanly
+    assert load_config({"REPAIR_PUBLISHER_TOKEN": "ghp_scoped_pat_12345"}).publisher_token == "ghp_scoped_pat_12345"

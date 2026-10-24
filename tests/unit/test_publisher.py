@@ -192,7 +192,7 @@ def test_publish_repair_pr_refuses_when_verification_is_infrastructure_failure()
         error_message="Missing enforceable disk quota: failing closed.",
     )
     diag = {"failure_types": ["test"], "root_cause": "Test failure"}
-    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="100")
+    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="100", enable_repair_pr=True)
 
     result = publish_repair_pr(patch, verif, diag, cfg)
 
@@ -213,7 +213,7 @@ def test_publish_repair_pr_refuses_when_test_failed():
         error_message="pytest failed with exit code 1",
     )
     diag = {"failure_types": ["test"]}
-    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="101")
+    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="101", enable_repair_pr=True)
 
     result = publish_repair_pr(patch, verif, diag, cfg)
     assert result.status == PublishStatus.SKIPPED_UNVERIFIED
@@ -230,7 +230,7 @@ def test_publish_repair_pr_refuses_when_timeout():
         error_message="Sandbox timeout after 180s",
     )
     diag = {"failure_types": ["test"]}
-    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="102")
+    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="102", enable_repair_pr=True)
 
     result = publish_repair_pr(patch, verif, diag, cfg)
     assert result.status == PublishStatus.SKIPPED_UNVERIFIED
@@ -245,7 +245,7 @@ def test_publish_repair_pr_refuses_unvalidated_or_rejected_patch():
     )
     verif = _make_verified_result()
     diag = {"failure_types": ["test"]}
-    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="103")
+    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="103", enable_repair_pr=True)
 
     result = publish_repair_pr(patch, verif, diag, cfg)
     assert result.status == PublishStatus.SKIPPED_UNVERIFIED
@@ -264,6 +264,7 @@ def test_publish_repair_pr_aborts_on_bot_actor():
         repo_name="owner/repo",
         run_id="104",
         github_actor="github-actions[bot]",
+        enable_repair_pr=True,
     )
 
     with patch("requests.get") as mock_get, patch("requests.post") as mock_post:
@@ -285,12 +286,12 @@ def test_publish_repair_pr_missing_credentials():
     diag = {"failure_types": ["test"]}
 
     # Missing token
-    cfg_no_token = AgentConfig(github_token=None, repo_name="owner/repo")
+    cfg_no_token = AgentConfig(github_token=None, repo_name="owner/repo", enable_repair_pr=True)
     res1 = publish_repair_pr(patch, verif, diag, cfg_no_token)
     assert res1.status == PublishStatus.PERMISSION_ERROR
 
     # Missing repo
-    cfg_no_repo = AgentConfig(github_token="test_github_token", repo_name=None)
+    cfg_no_repo = AgentConfig(github_token="test_github_token", repo_name=None, enable_repair_pr=True)
     res2 = publish_repair_pr(patch, verif, diag, cfg_no_repo)
     assert res2.status == PublishStatus.PERMISSION_ERROR
 
@@ -318,7 +319,7 @@ def test_publish_repair_pr_existing_branch_and_pr():
     patch_obj = _make_valid_patch()
     verif = _make_verified_result()
     diag = {"failure_types": ["test"]}
-    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="555")
+    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="555", enable_repair_pr=True)
 
     def mock_requests_get(url, *args, **kwargs):
         mock_resp = MagicMock()
@@ -356,6 +357,7 @@ def test_publish_repair_pr_fork_403_on_branch_creation_triggers_fallback(tmp_pat
         repo_name="owner/repo",
         run_id="777",
         pr_number="15",
+        enable_repair_pr=True,
     )
 
     def mock_requests_get(url, *args, **kwargs):
@@ -432,6 +434,7 @@ def test_publish_repair_pr_success_creates_draft_pr():
         run_id="999",
         base_branch="main",
         commit_sha="source_sha_123",
+        enable_repair_pr=True,
     )
 
     posted_payloads = {}
@@ -521,7 +524,7 @@ def test_publish_repair_pr_network_exception_handled():
     patch_obj = _make_valid_patch()
     verif = _make_verified_result()
     diag = {"failure_types": ["test"]}
-    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="333")
+    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="333", enable_repair_pr=True)
 
     with patch("requests.get", side_effect=requests.RequestException("Connection reset")):
         result = publish_repair_pr(patch_obj, verif, diag, cfg)
@@ -594,7 +597,7 @@ def test_publish_repair_pr_unmatched_hunk_aborts_tree_generation():
     patch_obj = _make_valid_patch()
     verif = _make_verified_result()
     diag = {"failure_types": ["test"]}
-    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="444")
+    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="444", enable_repair_pr=True)
 
     def mock_requests_get(url, *args, **kwargs):
         mock_resp = MagicMock()
@@ -627,7 +630,7 @@ def test_publish_repair_pr_recovers_from_partial_publication_success():
     patch_obj = _make_valid_patch()
     verif = _make_verified_result()
     diag = {"failure_types": ["test"], "root_cause": "Bug in app"}
-    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="888")
+    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="888", enable_repair_pr=True)
 
     def mock_requests_get(url, *args, **kwargs):
         mock_resp = MagicMock()
@@ -680,7 +683,7 @@ def test_publish_repair_pr_recovers_from_partial_publication_unvalidated_branch_
     patch_obj = _make_valid_patch()
     verif = _make_verified_result()
     diag = {"failure_types": ["test"]}
-    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="888")
+    cfg = AgentConfig(github_token="test_github_token", repo_name="owner/repo", run_id="888", enable_repair_pr=True)
 
     def mock_requests_get(url, *args, **kwargs):
         mock_resp = MagicMock()
@@ -706,3 +709,214 @@ def test_publish_repair_pr_recovers_from_partial_publication_unvalidated_branch_
             assert result.status == PublishStatus.API_ERROR
             assert "Refusing to create PR on unvalidated branch" in result.message
             mock_post.assert_not_called()
+
+
+# ── 10. Least-Privilege Token and Push/PR Context Tests ─────────────
+
+
+def test_publisher_token_takes_precedence_over_github_token():
+    """Verify that a dedicated REPAIR_PUBLISHER_TOKEN takes precedence over ambient GITHUB_TOKEN."""
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+    diag = {"failure_types": ["test"]}
+    cfg = AgentConfig(
+        github_token="ambient_read_only_token",
+        publisher_token="dedicated_scoped_pat_token",
+        repo_name="owner/repo",
+        run_id="run-pat-123",
+        enable_repair_pr=True,
+    )
+
+    captured_auth_headers = []
+
+    def mock_requests_get(url, headers=None, *args, **kwargs):
+        if headers and "Authorization" in headers:
+            captured_auth_headers.append(headers["Authorization"])
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        return mock_resp
+
+    with patch("requests.get", side_effect=mock_requests_get):
+        # Even on initial ref check 404, we verify the Authorization header used
+        publish_repair_pr(patch_obj, verif, diag, cfg)
+        assert len(captured_auth_headers) > 0
+        assert captured_auth_headers[0] == "token dedicated_scoped_pat_token"
+        assert "ambient_read_only_token" not in captured_auth_headers[0]
+
+
+def test_publisher_token_fallback_to_github_token():
+    """Verify fallback to ambient GITHUB_TOKEN when REPAIR_PUBLISHER_TOKEN is not set."""
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+    diag = {"failure_types": ["test"]}
+    cfg = AgentConfig(
+        github_token="ambient_token",
+        publisher_token=None,
+        repo_name="owner/repo",
+        run_id="run-ambient-123",
+        enable_repair_pr=True,
+    )
+
+    captured_auth_headers = []
+
+    def mock_requests_get(url, headers=None, *args, **kwargs):
+        if headers and "Authorization" in headers:
+            captured_auth_headers.append(headers["Authorization"])
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        return mock_resp
+
+    with patch("requests.get", side_effect=mock_requests_get):
+        publish_repair_pr(patch_obj, verif, diag, cfg)
+        assert len(captured_auth_headers) > 0
+        assert captured_auth_headers[0] == "token ambient_token"
+
+
+def test_handle_fork_fallback_push_context_vs_pr_context(tmp_path, monkeypatch):
+    """Verify fallback behavior truthfully handles direct push (no PR) vs pull request contexts."""
+    monkeypatch.chdir(tmp_path)
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+
+    # Case A: Direct push context (pr_number is None)
+    cfg_push = AgentConfig(
+        github_token="ghp_test_token",
+        repo_name="owner/repo",
+        pr_number=None,
+        base_branch="main",
+    )
+    with patch("agent.github.post_pr_comment") as mock_comment:
+        handle_fork_fallback(patch_obj, cfg_push, "403 Forbidden", verification=verif)
+        # Verify artifact was created on disk
+        artifact = tmp_path / "agent-patch.diff"
+        assert artifact.exists()
+        assert "def new_func():" in artifact.read_text(encoding="utf-8")
+        # Verify no PR comment was attempted
+        mock_comment.assert_not_called()
+
+    # Case B: Pull Request context (pr_number is "42")
+    cfg_pr = AgentConfig(
+        github_token="ghp_test_token",
+        repo_name="owner/repo",
+        pr_number="42",
+        base_branch="main",
+    )
+    with patch("agent.github.post_pr_comment") as mock_comment:
+        handle_fork_fallback(patch_obj, cfg_pr, "403 Forbidden", verification=verif)
+        mock_comment.assert_called_once()
+        args = mock_comment.call_args[0]
+        assert "owner/repo" in args
+        assert "42" in args
+        assert "Truthful verification notice" in args[0]
+
+
+def test_format_repair_pr_body_trigger_context_push_and_pr():
+    """Verify that Draft PR body accurately reflects the trigger context."""
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+    diag = {"failure_types": ["test"], "root_cause": "Unit test failure"}
+
+    # PR context
+    cfg_pr = AgentConfig(
+        repo_name="owner/repo",
+        run_id="111",
+        commit_sha="abcdef123456",
+        pr_number="77",
+        base_branch="main",
+    )
+    body_pr = format_repair_pr_body(diag, patch_obj, verif, cfg_pr)
+    assert "- **Trigger Context:** Pull Request `#77`" in body_pr
+
+    # Push context
+    cfg_push = AgentConfig(
+        repo_name="owner/repo",
+        run_id="222",
+        commit_sha="abcdef123456",
+        pr_number=None,
+        base_branch="develop",
+    )
+    body_push = format_repair_pr_body(diag, patch_obj, verif, cfg_push)
+    assert "- **Trigger Context:** Direct Push (`develop`)" in body_push
+
+
+def test_publish_repair_pr_permission_failure_403_creates_artifact(tmp_path, monkeypatch):
+    """Verify 403 Forbidden on branch creation triggers fallback, writes diff artifact, and returns FORK_LIMITATION."""
+    monkeypatch.chdir(tmp_path)
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+    diag = {"failure_types": ["test"]}
+    cfg = AgentConfig(
+        github_token="ghp_read_only_token",
+        repo_name="owner/repo",
+        run_id="555",
+        enable_repair_pr=True,
+    )
+
+    def mock_requests_get(url, *args, **kwargs):
+        mock_resp = MagicMock()
+        if "/git/ref/heads/agent/fix-test-555" in url:
+            mock_resp.status_code = 404
+            return mock_resp
+        if "/git/ref/heads/main" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"object": {"sha": "base_sha"}}
+            return mock_resp
+        if "/git/commits/base_sha" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"tree": {"sha": "base_tree_sha"}}
+            return mock_resp
+        if "/contents/" in url:
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                "encoding": "utf-8",
+                "content": "def old_func():\n    return True\n",
+            }
+            return mock_resp
+        mock_resp.status_code = 404
+        return mock_resp
+
+    def mock_requests_post(url, *args, **kwargs):
+        mock_resp = MagicMock()
+        if "/git/trees" in url:
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"sha": "new_tree_sha"}
+            return mock_resp
+        if "/git/commits" in url:
+            mock_resp.status_code = 201
+            mock_resp.json.return_value = {"sha": "new_commit_sha"}
+            return mock_resp
+        if "/git/refs" in url:
+            # 403 Forbidden: insufficient contents:write scope
+            mock_resp.status_code = 403
+            mock_resp.text = '{"message": "Resource not accessible by integration"}'
+            return mock_resp
+        mock_resp.status_code = 400
+        return mock_resp
+
+    with patch("requests.get", side_effect=mock_requests_get):
+        with patch("requests.post", side_effect=mock_requests_post):
+            result = publish_repair_pr(patch_obj, verif, diag, cfg)
+            assert result.status == PublishStatus.FORK_LIMITATION
+            assert "403 Forbidden" in result.message
+            assert (tmp_path / "agent-patch.diff").exists()
+
+
+def test_publish_repair_pr_disabled_by_default_no_api_calls():
+    """Verify publication stays disabled by default and makes zero network requests without explicit opt-in."""
+    patch_obj = _make_valid_patch()
+    verif = _make_verified_result()
+    diag = {"failure_types": ["test"]}
+    # Explicitly default enable_repair_pr=False
+    cfg = AgentConfig(
+        github_token="ghp_token",
+        repo_name="owner/repo",
+        run_id="default-run",
+        enable_repair_pr=False,
+    )
+
+    with patch("requests.get") as mock_get, patch("requests.post") as mock_post:
+        result = publish_repair_pr(patch_obj, verif, diag, cfg)
+        assert result.status == PublishStatus.SKIPPED_UNVERIFIED
+        assert "disabled in configuration" in result.message
+        mock_get.assert_not_called()
+        mock_post.assert_not_called()

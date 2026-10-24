@@ -198,26 +198,49 @@ git diff --check
 
 You can test and demonstrate ACID AI locally without live GitHub Actions runners or live LLM charges.
 
-### 🖥️ Interactive Web Dashboard (Hackathon Presentation)
+### 🖥️ Interactive Web Dashboard (Repository-First & Presentation Demo)
 
-Launch the lightweight presentation dashboard in one command:
+Launch the interactive dashboard with a single command:
 
 ```bash
 python run_demo.py
 # Server binds to http://127.0.0.1:5000
 ```
 
-Open `http://127.0.0.1:5000` in any browser to interact with:
-- **Pipeline Stage Stepper:** Visual 5-stage progress (Log Detection → AI Diagnosis → Patch Validation → Isolated Sandbox → Draft PR Gate).
-- **One-Click Scenarios:** Healthy Run (Silent Bypass), Missing Dependency, Flake8 Lint Error, Pytest Assertion Failure, Docker Build Error, and Live Local Pytest Execution.
-- **AI Engine Toggle:** Switch seamlessly between **Offline Deterministic Mock** (100% reliable for live stage demos) and **Live Google Gemini API** (`gemini-3.8-flash`).
-- **Fail-Closed Safety Visualization:** Truthfully displays `BLOCKED — infrastructure requirement not met` whenever Docker is offline or disk quotas are unsupported, showing judges that candidate code is strictly protected from host execution.
-- **Run History & Reset:** Review previous scenario outcomes or reset the session log.
+Open `http://127.0.0.1:5000` in your browser to experience the two operational modes:
+
+#### 1. Repository-First Workflow (Primary Mode)
+- **Local Repository Inspection**: Automatically detects the active workspace (or input custom local path), validates that it is a Git repository, and identifies the current branch (e.g. `main`), base commit SHA, working tree cleanliness, and detected test frameworks / dependency manifests.
+- **Disposable Workspace Isolation**: Clicking **"Run Analysis & Repair"** provisions an ephemeral copy of the repository in a temporary directory (excluding `.git`, `.venv`, `.env`, and caches). **The user's original repository is never modified.**
+- **Real Execution & Truthful Telemetry**: Discovers and runs tests in the isolated copy or ingests failure logs, executes stage classification, performs root-cause diagnosis (live Gemini API or deterministic mock), generates minimal diffs, validates all 6 safety policies, and tests isolated container verification.
+- **Accurate Repository-First Diagnosis & Contract Ambiguity**: Repository-first runs inspect actual repository files and never inject canned demo diagnoses or unrelated patches. When test assertions and implementation logic conflict without specification evidence (e.g., `assert add(2, 2) == 5` vs `add(a, b)` returning 4), the agent flags contract ambiguity, sets low confidence, and refrains from guessing fixes.
+- **Two-Level Plain-English Reporting**:
+  - **Level 1 (Beginner-Friendly Summary)**: Immediate executive answers explaining: What Happened, Why It Happened, What ACID AI Attempted, Did the Repair Work, Why the Agent Stopped, What You Should Do Next, and Publication Status across all 5 canonical outcomes (`healthy`, `repaired`, `partially repaired`, `unresolved`, `blocked`).
+  - **Level 2 (Technical Details)**: Expandable technical drill-downs covering stage results, log excerpts, unified diffs, policy checks, container verification, and PR delivery.
+- **Three Unified Export Formats (Single Source of Truth)**:
+  - **JSON (`GET /api/reports/<run_id>`)**: Canonical machine-readable record.
+  - **Markdown (`GET /api/reports/<run_id>/markdown`)**: Human-readable documentation for pull requests and GitHub wikis.
+  - **PDF (`GET /api/reports/<run_id>/pdf`)**: Professional printable PDF with running headers, "Page X of Y" pagination, outcome badges, diff previews, secret redaction, and human review boundaries. Downloadable directly via **Download Report (PDF)** on the dashboard.
+- **Run Status & Records**: Generates unique run records (`run-xxxxxxxx`) tracking repository identity, base commit, selected mode, timestamps, duration, and truthful status (`HEALTHY`, `REPAIRED`, `PARTIALLY REPAIRED`, `UNRESOLVED`, `BLOCKED`).
+
+#### 2. Demonstration Scenarios (Separate Demo Mode)
+- Switch to the **"Demonstration Scenarios"** tab to benchmark the agent against 6 reproducible, pre-canned failure fixtures with zero API credit consumption:
+  1. **Healthy Run**: Silent healthy bypass (0 tokens, 0 comments).
+  2. **Missing Dependency**: Dependency installation failure & manifest repair.
+  3. **Flake8 Lint**: PEP 8 style violations & automated code cleanup.
+  4. **Pytest Assertion**: Unit test assertion failure & logic fix proposal.
+  5. **Docker Build**: Container layer build error & Dockerfile repair.
+  6. **Live Pytest**: Real local test execution on `sample-app/tests`.
+- **AI Engine Toggle**: Switch between **Deterministic Mock (Offline Safe)** and **Live Gemini API** (`gemini-3.8-flash`).
+- **Fail-Closed Safety Visualization**: Truthfully displays `BLOCKED — infrastructure requirement not met` whenever Docker is offline or disk quotas are unsupported.
+- **Run History**: Tracks both repository runs (`REAL REPO`) and demo scenario runs (`MOCK DEMO`) in an inspectable session log with instant reset.
 
 ### Demo Status Matrix: Real vs Mocked vs Blocked
 
 | Component / Stage | Local Demo Status | Implementation Mechanism |
 | :--- | :---: | :--- |
+| **Repository & Git Inspection** | **REAL** | `agent/repository.py` resolves local Git root, branch, and 40-char commit SHA. |
+| **Disposable Workspace Isolation**| **REAL** | `agent/repository.py` creates ephemeral copy excluding `.git`, `.venv`, `.env`. Zero host mutation. |
 | **Log Collection & Seeking** | **REAL** | `agent/collector.py` reads local file tail up to 50KB without memory exhaustion. |
 | **Outcome & Regex Classification** | **REAL** | `agent/classifier.py` parses step outcomes and matches failure signatures. |
 | **AI Diagnosis & Prompt Generation** | **REAL / MOCKED** | Prompts formatted with real sanitization; AI responses can use live API keys or deterministic mocks. |
@@ -226,7 +249,7 @@ Open `http://127.0.0.1:5000` in any browser to interact with:
 | **Ephemeral Copy Creation** | **REAL** | `agent/runner.py` creates temporary workspace excluding `.git` and applies diff in-memory. |
 | **Container Sandbox Isolation** | **REAL or BLOCKED** | If Docker is running with enforced quotas, executes in isolated container. If Docker is offline, **fails closed** (`INFRASTRUCTURE_FAILURE`), safely refusing host execution. |
 | **Secret Redaction** | **REAL** | `agent/security.py` scrubs credentials from all logs, comments, and diffs. |
-| **GitHub Draft PR Publishing** | **MOCKED / REAL** | Uses real Git logic; publishes to remote GitHub when `GITHUB_TOKEN` is supplied, or outputs local artifact. |
+| **GitHub Draft PR Publishing** | **DISABLED / GATED** | Intentionally disabled in Milestone 1 repository workflow; verified draft PR logic preserved. |
 
 ### Step-by-Step Demo Scenarios
 

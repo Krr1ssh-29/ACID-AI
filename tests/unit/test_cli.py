@@ -309,3 +309,31 @@ def test_main_triage_flow_with_verified_patch_publishes_draft_pr(monkeypatch, tm
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "Draft PR created: #55" in captured.out
+
+
+def test_main_missing_credentials_truthfully_emits_report_and_analysis(tmp_path, monkeypatch):
+    """Confirm missing AI credentials do not silently skip report generation (Phase 5 review requirement 3)."""
+    monkeypatch.chdir(tmp_path)
+    cfg = AgentConfig(
+        ai_provider="claude",
+        anthropic_api_key=None,
+        run_id="run-missing-cred-123",
+        repo_name="org/repo",
+    )
+    exit_code = main(config=cfg)
+    assert exit_code == 1
+
+    # Verify agent-analysis.json is created and explains missing credentials
+    analysis_file = tmp_path / "agent-analysis.json"
+    assert analysis_file.exists()
+    analysis_data = json.loads(analysis_file.read_text(encoding="utf-8"))
+    assert analysis_data["status"] == "blocked"
+    assert "Live diagnosis was unavailable" in analysis_data["details"]
+
+    # Verify report was generated in reports/
+    from agent.report import get_report
+    rep = get_report("run-missing-cred-123")
+    assert rep is not None
+    assert rep.outcome == "blocked"
+    assert "Live diagnosis was unavailable" in rep.stop_reason
+    assert "ANTHROPIC_API_KEY not set" in rep.stop_reason

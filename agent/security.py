@@ -15,15 +15,15 @@ SECRET_PATTERNS: List[re.Pattern] = [
     # Anthropic Claude API Keys (e.g., sk-ant-api03-...)
     re.compile(r"\bsk-ant-[a-zA-Z0-9_\-\.]{20,}\b"),
     # GitHub Classic Personal Access Tokens (ghp_...)
-    re.compile(r"\bghp_[a-zA-Z0-9]{36,}\b"),
+    re.compile(r"\bghp_[a-zA-Z0-9]{20,}\b"),
     # GitHub OAuth Access Tokens (gho_...)
-    re.compile(r"\bgho_[a-zA-Z0-9]{36,}\b"),
+    re.compile(r"\bgho_[a-zA-Z0-9]{20,}\b"),
     # GitHub User-to-Server Tokens (ghu_...)
-    re.compile(r"\bghu_[a-zA-Z0-9]{36,}\b"),
+    re.compile(r"\bghu_[a-zA-Z0-9]{20,}\b"),
     # GitHub Server-to-Server Tokens (ghs_...)
-    re.compile(r"\bghs_[a-zA-Z0-9]{36,}\b"),
+    re.compile(r"\bghs_[a-zA-Z0-9]{20,}\b"),
     # GitHub Refresh Tokens (ghr_...)
-    re.compile(r"\bghr_[a-zA-Z0-9]{36,}\b"),
+    re.compile(r"\bghr_[a-zA-Z0-9]{20,}\b"),
     # GitHub Fine-Grained Personal Access Tokens (github_pat_...)
     re.compile(r"\bgithub_pat_[a-zA-Z0-9_]{40,}\b"),
     # Authorization Bearer Headers

@@ -816,3 +816,538 @@ header.app-header {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ==========================================================================
+   Milestone 1: Repository-First Workflow & Mode Tabs
+   ========================================================================== */
+
+.hidden {
+  display: none !important;
+}
+
+/* Mode Tabs Wrapper */
+.mode-tabs-wrapper {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.mode-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  backdrop-filter: blur(12px);
+}
+
+.mode-tab:hover {
+  background: var(--bg-surface-elevated);
+  border-color: var(--border-focus);
+  color: #fff;
+}
+
+.mode-tab.active {
+  background: var(--bg-surface-elevated);
+  border-color: var(--brand-primary);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.2);
+}
+
+.tab-icon {
+  font-size: 16px;
+}
+
+.tab-badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.tab-badge.live {
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+}
+
+.tab-badge.mock {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+/* Repository Selection Bar */
+.repo-selection-bar {
+  margin-top: 14px;
+  margin-bottom: 16px;
+}
+
+.repo-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  transition: var(--transition-fast);
+}
+
+.repo-input-wrapper:focus-within {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+}
+
+.repo-input-wrapper .input-icon {
+  font-size: 16px;
+  opacity: 0.7;
+}
+
+.repo-path-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 6px 0;
+}
+
+.repo-path-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Repository Identity Card */
+.repo-identity-card {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+}
+
+.repo-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.meta-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.repo-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.repo-meta-pill strong {
+  color: #fff;
+}
+
+.repo-meta-pill.branch {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.1);
+  color: #6ee7b7;
+}
+
+.repo-meta-pill.commit {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.1);
+  color: #a5b4fc;
+}
+
+.repo-meta-pill.status {
+  border-color: rgba(6, 182, 212, 0.35);
+  background: rgba(6, 182, 212, 0.1);
+  color: #67e8f9;
+}
+
+.repo-meta-pill.isolation {
+  border-color: rgba(168, 85, 247, 0.35);
+  background: rgba(168, 85, 247, 0.1);
+  color: #d8b4fe;
+}
+
+.repo-details-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.repo-tags-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tags-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.repo-tag {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #e2e8f0;
+}
+
+.repo-validation-feedback {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.repo-validation-feedback.valid {
+  color: var(--color-success);
+}
+
+.repo-validation-feedback.invalid {
+  color: var(--color-failure);
+}
+
+/* Primary Action Bar & Status */
+.repo-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.btn-primary-action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--brand-gradient);
+  border: none;
+  color: #fff;
+  padding: 14px 28px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.btn-primary-action:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.6);
+}
+
+.btn-primary-action:active {
+  transform: translateY(0);
+}
+
+.btn-primary-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-primary-action .btn-icon {
+  font-size: 16px;
+}
+
+/* Run Status Card Area */
+.run-status-area {
+  flex: 1;
+  min-width: 320px;
+}
+
+.run-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
+}
+
+.run-status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.run-status-indicator.idle {
+  background: var(--text-muted);
+}
+
+.run-status-indicator.running {
+  background: var(--brand-primary);
+  box-shadow: 0 0 10px var(--brand-primary);
+  animation: pulse-dot 1.2s infinite;
+}
+
+.run-status-indicator.healthy {
+  background: var(--color-success);
+  box-shadow: 0 0 10px var(--color-success);
+}
+
+.run-status-indicator.repaired {
+  background: var(--color-success);
+  box-shadow: 0 0 12px var(--color-success);
+}
+
+.run-status-indicator.partially-repaired {
+  background: var(--color-info);
+  box-shadow: 0 0 12px var(--color-info);
+}
+
+.run-status-indicator.unresolved {
+  background: var(--color-failure);
+  box-shadow: 0 0 12px var(--color-failure);
+}
+
+.run-status-indicator.failed {
+  background: var(--color-failure);
+  box-shadow: 0 0 10px var(--color-failure);
+}
+
+.run-status-indicator.blocked {
+  background: var(--color-warning);
+  box-shadow: 0 0 10px var(--color-warning);
+}
+
+.run-status-details {
+  flex: 1;
+}
+
+.run-status-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.run-status-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.run-record-tags {
+  display: flex;
+  gap: 6px;
+}
+
+.record-tag {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+/* Phase 4: Autonomous Repair Loop Timeline & Cards */
+.attempts-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.attempts-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attempt-item {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color var(--transition-fast);
+}
+
+.attempt-item:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.attempt-item.verified {
+  border-left: 3px solid var(--color-success);
+}
+
+.attempt-item.verification_failed {
+  border-left: 3px solid var(--color-failure);
+}
+
+.attempt-item.blocked {
+  border-left: 3px solid var(--color-warning);
+}
+
+.attempt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.attempt-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attempt-details {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.attempt-details strong {
+  color: var(--text-secondary);
+}
+
+.attempt-details code {
+  font-family: var(--font-mono);
+  color: #cbd5e1;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* Modal Dialog & Final Report Styles (Phase 5) */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.modal-overlay.hidden {
+  display: none !important;
+}
+
+.modal-container {
+  width: 100%;
+  max-width: 900px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.repo-meta-pill.remote {
+  border-color: rgba(6, 182, 212, 0.3);
+  color: #67e8f9;
+}
+
+/* Level 1: Plain-English Run Summary (QA Fix 2) */
+.plain-english-summary-box {
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  transition: border-color var(--transition-fast);
+}
+
+.plain-english-summary-box:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.modal-summary-box {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  margin-bottom: 14px;
+}
+
+.report-actions-row .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition-fast);
+}
+
+.report-actions-row .btn-secondary:not(:disabled):hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.report-actions-row .btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

@@ -355,6 +355,8 @@ def validate_file_path(path: str, repo_root: Optional[str] = None) -> List[Patch
     if not is_allowlisted:
         if norm_path in ALLOWLISTED_ROOT_MANIFESTS:
             is_allowlisted = True
+        elif "/" not in norm_path and norm_path.endswith(".py"):
+            is_allowlisted = True
 
     if not is_allowlisted:
         errors.append(

@@ -2,3 +2,4 @@
 requests==2.32.3
 anthropic==2.0.0
 pydantic==2.14.1
+reportlab==5.1.0

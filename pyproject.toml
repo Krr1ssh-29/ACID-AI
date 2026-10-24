@@ -12,6 +12,7 @@ dependencies = [
     "requests==2.32.3",
     "anthropic==2.0.0",
     "pydantic==2.14.1",
+    "reportlab==5.1.0",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +22,7 @@ dev = [
     "pytest-cov==7.1.0",
     "coverage==7.16.2",
     "flake8==7.4.1",
+    "pypdf==6.21.2",
 ]
 
 [tool.pytest.ini_options]

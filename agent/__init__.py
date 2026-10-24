@@ -22,11 +22,20 @@ from agent.models import (
     PatchProposal,
     VerificationStatus,
     VerificationResult,
+    RepositoryMetadata,
+    RunRecord,
 )
 from agent.config import load_config, validate_credentials
 from agent.collector import read_logs, read_logs_bounded
 from agent.classifier import classify_failures
-from agent.evidence import strip_ansi, parse_step_outcomes, split_stage_logs, extract_stack_trace_snippet
+from agent.evidence import (
+    strip_ansi,
+    parse_step_outcomes,
+    split_stage_logs,
+    extract_stack_trace_snippet,
+    extract_affected_files,
+    inspect_affected_files,
+)
 from agent.parser import parse_ai_response
 from agent.formatter import format_pr_comment
 from agent.github import post_pr_comment
@@ -52,6 +61,17 @@ from agent.runner import (
     is_command_allowlisted,
     copy_disposable_repo,
     apply_patch_to_disposable_tree,
+)
+from agent.repository import (
+    validate_repository,
+    create_disposable_workspace,
+    disposable_working_copy,
+)
+from agent.report import (
+    FinalReport,
+    generate_final_report,
+    get_report,
+    list_reports,
 )
 
 
@@ -86,6 +106,8 @@ __all__ = [
     "parse_step_outcomes",
     "split_stage_logs",
     "extract_stack_trace_snippet",
+    "extract_affected_files",
+    "inspect_affected_files",
     "classify_failures",
     "parse_ai_response",
     "format_pr_comment",
@@ -109,5 +131,14 @@ __all__ = [
     "is_command_allowlisted",
     "copy_disposable_repo",
     "apply_patch_to_disposable_tree",
+    "RepositoryMetadata",
+    "RunRecord",
+    "validate_repository",
+    "create_disposable_workspace",
+    "disposable_working_copy",
+    "FinalReport",
+    "generate_final_report",
+    "get_report",
+    "list_reports",
     "main",
 ]

@@ -265,3 +265,93 @@ def test_execute_generic_error_wrapped():
                     command=["pytest"],
                 )
             assert "Disk failure" in str(exc_info.value)
+
+
+# ── Phase 3: Storage Isolation and Lifecycle Unit Tests ───────────────────────
+
+
+def test_check_storage_isolation_enforcement_success():
+    """Verify check_storage_isolation_enforcement returns True when probe succeeds (exit code 0)."""
+    sandbox = DockerSandbox(image="cicd-sandbox:latest", read_only_rootfs=True)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        enforced, msg = sandbox.check_storage_isolation_enforcement()
+        assert enforced is True
+        assert "verified" in msg.lower()
+
+
+def test_check_storage_isolation_enforcement_failure():
+    """Verify check_storage_isolation_enforcement returns False when probe fails (exit code nonzero)."""
+    sandbox = DockerSandbox(image="cicd-sandbox:latest", read_only_rootfs=True)
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1, stdout="Storage probe failed: ro=False", stderr="")
+        enforced, msg = sandbox.check_storage_isolation_enforcement()
+        assert enforced is False
+        assert "not enforced" in msg.lower()
+
+
+def test_build_docker_command_read_only_tmpfs():
+    """Verify build_docker_command with read_only_rootfs=True emits immutable root and bounded tmpfs."""
+    sandbox = DockerSandbox(
+        image="cicd-sandbox:latest",
+        read_only_rootfs=True,
+        workspace_tmpfs_size="256m",
+        storage_isolation_mode="read_only_tmpfs",
+    )
+    cmd = sandbox.build_docker_command(
+        repo_dir="/host/disposable_dir",
+        command=["pytest", "sample-app/tests/"],
+        container_name="acid-sandbox-unit-test",
+    )
+
+    assert "--read-only" in cmd
+    assert "--name" in cmd
+    assert cmd[cmd.index("--name") + 1] == "acid-sandbox-unit-test"
+    assert "--tmpfs" in cmd
+    tmpfs_indices = [i for i, x in enumerate(cmd) if x == "--tmpfs"]
+    tmpfs_specs = [cmd[i + 1] for i in tmpfs_indices]
+    assert any("/workspace:rw" in spec and "size=256m" in spec for spec in tmpfs_specs)
+    assert any("/tmp:rw" in spec for spec in tmpfs_specs)
+
+    # Repository must be mounted read-only to /repo_ro:ro
+    v_indices = [i for i, x in enumerate(cmd) if x == "-v"]
+    v_specs = [cmd[i + 1] for i in v_indices]
+    assert any(spec.endswith(":/repo_ro:ro") for spec in v_specs)
+
+    # Wrapper script must copy /repo_ro to /workspace and exec command
+    assert "sh" in cmd
+    assert "-c" in cmd
+    c_idx = cmd.index("-c")
+    assert "cp -r /repo_ro/. /workspace/" in cmd[c_idx + 1]
+
+
+def test_cleanup_container_calls_docker_rm():
+    """Verify cleanup_container calls docker rm -f on the container name."""
+    sandbox = DockerSandbox()
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        sandbox.cleanup_container("acid-sandbox-1234")
+        mock_run.assert_called_once_with(
+            ["docker", "rm", "-f", "acid-sandbox-1234"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+
+
+def test_cleanup_container_silently_handles_missing_container():
+    """Verify cleanup_container does not raise if docker rm fails or times out."""
+    sandbox = DockerSandbox()
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("docker rm", 5)):
+        # Must not raise
+        sandbox.cleanup_container("acid-sandbox-missing")
+
+
+def test_provision_dependencies_rejects_missing_manifest():
+    """Verify provision_dependencies returns False when requirements file does not exist."""
+    sandbox = DockerSandbox()
+    ok, msg = sandbox.provision_dependencies(
+        manifest_file="/nonexistent/requirements.txt",
+    )
+    assert ok is False
+    assert "not found" in msg.lower()

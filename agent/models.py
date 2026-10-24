@@ -1,6 +1,6 @@
 """Data models and schemas for the AI CI/CD Failure Triage Agent."""
 from enum import Enum
-from typing import List, Dict, Optional, Literal
+from typing import List, Dict, Optional, Literal, Any
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -75,9 +75,15 @@ class FailureContext(BaseModel):
         None, description="Diagnostic details or explanation of inconclusive state"
     )
 
+    model_config = {"extra": "allow"}
+
     def __getitem__(self, item: str):
         """Allow subscript access for backwards-compatibility with legacy dictionary callers."""
         return getattr(self, item)
+
+    def __setitem__(self, key: str, value: Any):
+        """Allow item assignment for backwards-compatibility with dictionary callers."""
+        setattr(self, key, value)
 
     def get(self, item: str, default=None):
         """Allow get access for backwards-compatibility with legacy dictionary callers."""
@@ -195,10 +201,19 @@ class AgentConfig(BaseModel):
         default=100, ge=10, le=1000, description="PID count ceiling in sandbox"
     )
     sandbox_image: str = Field(
-        default="python:3.11-slim", description="Disposable container image"
+        default="cicd-sandbox:latest", description="Disposable container image"
+    )
+    sandbox_read_only_rootfs: bool = Field(
+        default=True, description="Enforce read-only rootfs with bounded tmpfs storage isolation"
+    )
+    sandbox_storage_size: str = Field(
+        default="256m", description="Bounded workspace tmpfs storage size ceiling"
+    )
+    sandbox_storage_mode: str = Field(
+        default="read_only_tmpfs", description="Storage isolation mode: read_only_tmpfs, storage_opt, or auto"
     )
     max_repair_attempts: int = Field(
-        default=2, ge=1, le=2, description="Maximum bounded repair self-correction attempts"
+        default=3, ge=1, le=10, description="Maximum bounded repair self-correction attempts per run"
     )
     base_branch: str = Field(
         default="main", description="Target base branch for repair pull requests"
@@ -207,7 +222,11 @@ class AgentConfig(BaseModel):
         default=None, description="GitHub actor triggering workflow (used for anti-recursion)"
     )
     enable_repair_pr: bool = Field(
-        default=True, description="Whether to attempt Draft PR creation for verified repairs"
+        default=False, description="Whether to attempt Draft PR creation for verified repairs"
+    )
+    publisher_token: Optional[str] = Field(
+        default=None,
+        description="Dedicated fine-grained GitHub token with contents:write for repair branch publishing",
     )
     max_prompt_tokens: int = Field(
         default=12000, ge=1000, le=100000, description="Maximum total prompt tokens allowed per run"
@@ -258,8 +277,8 @@ class VerificationResult(BaseModel):
         description="Explanation if execution failed, timed out, or encountered errors",
     )
     attempt: int = Field(
-        default=1, ge=1, le=2,
-        description="Repair attempt number (bounded 2-attempt loop)",
+        default=1, ge=1, le=10,
+        description="Repair attempt number (bounded retry loop)",
     )
     truthfulness_statement: str = Field(
         default=(
@@ -424,3 +443,195 @@ class PublishResult(BaseModel):
 class TokenBudgetExceededError(RuntimeError):
     """Raised when an operation would exceed the prompt token budget for a run."""
     pass
+
+
+class RepositoryMetadata(BaseModel):
+    """Metadata describing a validated local Git repository."""
+    path: str = Field(..., description="Absolute path to the repository root")
+    name: str = Field(..., description="Repository name (e.g. folder name)")
+    branch: str = Field(default="unknown", description="Current Git branch or HEAD reference")
+    base_commit: str = Field(default="unknown", description="Base commit SHA (full 40-char)")
+    short_sha: str = Field(default="unknown", description="Abbreviated commit SHA (8 chars)")
+    is_git: bool = Field(default=False, description="Whether path is a valid Git repository")
+    is_clean: bool = Field(default=True, description="Whether working tree has uncommitted modifications")
+    has_tests: bool = Field(default=False, description="Whether test suites were detected")
+    has_manifest: bool = Field(default=False, description="Whether dependency manifests were detected")
+    detected_files: List[str] = Field(default_factory=list, description="Key detected manifests and test paths")
+    remote_url: Optional[str] = Field(default=None, description="Git remote origin URL if configured")
+    github_repo: Optional[str] = Field(default=None, description="GitHub repository slug in owner/repo format")
+    error: Optional[str] = Field(default=None, description="Error message if validation failed")
+
+    def __getitem__(self, item: str):
+        """Allow subscript access for backwards-compatibility."""
+        return getattr(self, item)
+
+    def get(self, item: str, default=None):
+        """Allow get access for backwards-compatibility."""
+        return getattr(self, item, default)
+
+
+class RepairAttempt(BaseModel):
+    """Record of a single repair cycle within the autonomous repair loop."""
+    attempt: int = Field(..., ge=1, description="1-based attempt index")
+    status: str = Field(
+        ...,
+        description=(
+            "Attempt outcome status: VERIFIED, TEST_FAILED, TIMEOUT, "
+            "PATCH_REJECTED, INFRASTRUCTURE_FAILURE, STALLED, BLOCKED"
+        ),
+    )
+    failure_category: Optional[str] = Field(default=None, description="Primary failure category diagnosed")
+    diagnosis: Optional[Dict[str, Any]] = Field(default=None, description="Diagnostic analysis for this attempt")
+    patch: Optional[Dict[str, Any]] = Field(default=None, description="Candidate patch proposal details")
+    verification: Optional[Dict[str, Any]] = Field(default=None, description="Verification result details")
+    test_results: Optional[str] = Field(default="", description="Captured test output or error logs")
+    reason: Optional[str] = Field(default=None, description="Reason for stopping or retrying after this attempt")
+
+    def __getitem__(self, item: str):
+        """Allow subscript access for backwards-compatibility."""
+        return getattr(self, item)
+
+    def get(self, item: str, default=None):
+        """Allow get access for backwards-compatibility."""
+        return getattr(self, item, default)
+
+
+class RunRecord(BaseModel):
+    """Execution record for an analysis and repair run."""
+    run_id: str = Field(..., description="Unique run identifier (e.g. run-xxxx or demo-xxxx)")
+    repo_path: str = Field(..., description="Path to the analyzed repository")
+    repo_name: str = Field(..., description="Name of the analyzed repository")
+    branch: str = Field(default="unknown", description="Target Git branch")
+    pr_number: Optional[str] = Field(
+        default=None, description="Pull request number string if executed in PR context"
+    )
+    base_commit: str = Field(default="unknown", description="Base commit SHA")
+    short_sha: str = Field(default="unknown", description="Abbreviated commit SHA")
+    mode: str = Field(default="real", description="Run mode: 'real', 'live_gemini', 'mock_scenario', etc.")
+    status: str = Field(
+        default="PENDING",
+        description="Current run status: PENDING, RUNNING, HEALTHY, FAILED, BLOCKED, ERROR, REPAIRED",
+    )
+    final_status: Optional[str] = Field(
+        default=None,
+        description="Autonomous loop conclusion: repaired, partially repaired, unresolved, blocked, or healthy",
+    )
+    stop_reason: Optional[str] = Field(
+        default=None, description="Reason why the repair loop terminated or completed"
+    )
+    retry_count: int = Field(
+        default=0, ge=0, description="Total repair attempts executed in the autonomous loop"
+    )
+    created_at: str = Field(..., description="Timestamp of record creation")
+    started_at: Optional[str] = Field(default=None, description="Timestamp of execution start")
+    completed_at: Optional[str] = Field(default=None, description="Timestamp of completion")
+    elapsed_seconds: Optional[float] = Field(default=None, description="Execution duration in seconds")
+    is_healthy: Optional[bool] = Field(default=None, description="Whether the pipeline was healthy")
+    disposable_workspace: Optional[str] = Field(default=None, description="Path to disposable copy if active")
+    classification: Optional[Dict[str, Any]] = Field(default=None, description="Failure classification summary")
+    diagnosis: Optional[Dict[str, Any]] = Field(default=None, description="Root-cause diagnosis")
+    patch: Optional[Dict[str, Any]] = Field(default=None, description="Patch proposal details")
+    verification: Optional[Dict[str, Any]] = Field(default=None, description="Isolated verification result")
+    publication: Optional[Dict[str, Any]] = Field(default=None, description="Publishing result")
+    truthfulness: Optional[Dict[str, Any]] = Field(default=None, description="Explicit execution and mode metadata")
+    attempts: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Record of each repair attempt in the autonomous loop"
+    )
+    verified_patches: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Cumulative verified patches applied during the run"
+    )
+    error_message: Optional[str] = Field(
+        default=None, description="Error message if run encountered an unhandled exception"
+    )
+    final_report: Optional[Dict[str, Any]] = Field(
+        default=None, description="Structured final report summary"
+    )
+
+    def __getitem__(self, item: str):
+        """Allow subscript access for backwards-compatibility."""
+        return getattr(self, item)
+
+    def get(self, item: str, default=None):
+        """Allow get access for backwards-compatibility."""
+        return getattr(self, item, default)
+
+
+class PlainEnglishSummary(BaseModel):
+    """Beginner-friendly plain-English summary of run outcome, attempts, and next steps."""
+    overall_outcome: str = Field(
+        ..., description="Canonical outcome: healthy, repaired, partially repaired, unresolved, or blocked"
+    )
+    overall_outcome_text: str = Field(..., description="Human-friendly status explanation")
+    what_happened: str = Field(..., description="Plain language explanation of failing or passing checks")
+    why_it_happened: str = Field(..., description="Evidence-supported root cause or contract ambiguity note")
+    what_acid_attempted: str = Field(
+        ..., description="Summary of repair attempts, affected files, and policy decisions"
+    )
+    did_repair_work: str = Field(..., description="Truthful sandbox verification conclusion based on actual exit codes")
+    why_agent_stopped: str = Field(..., description="Plain-language reason why execution completed or halted")
+    what_to_do_next: str = Field(..., description="Actionable recommendations for the developer")
+    publication_status: str = Field(..., description="Human-friendly Draft PR publication status")
+    pr_url: Optional[str] = Field(default=None, description="Draft PR URL if successfully created")
+    pr_number: Optional[int] = Field(default=None, description="Draft PR number if successfully created")
+
+    def __getitem__(self, item: str):
+        """Allow subscript access for backwards-compatibility."""
+        return getattr(self, item)
+
+    def get(self, item: str, default=None):
+        """Allow get access for backwards-compatibility."""
+        return getattr(self, item, default)
+
+
+class FinalReport(BaseModel):
+    """Structured final report for a completed analysis and repair run."""
+    run_id: str = Field(..., description="Unique run identifier")
+    repository: str = Field(..., description="Repository name or slug")
+    repo_path: str = Field(..., description="Path to repository")
+    branch: str = Field(default="unknown", description="Target Git branch")
+    pr_number: Optional[str] = Field(
+        default=None, description="Pull request number string if executed in PR context"
+    )
+    base_commit: str = Field(default="unknown", description="Base commit SHA")
+    short_sha: str = Field(default="unknown", description="Abbreviated commit SHA")
+    outcome: str = Field(
+        ..., description="Overall outcome: healthy, repaired, partially repaired, unresolved, or blocked"
+    )
+    mode: str = Field(default="real", description="Run mode: real, live_gemini, live_claude, mock_scenario, etc.")
+    created_at: str = Field(..., description="Start timestamp")
+    completed_at: Optional[str] = Field(default=None, description="Completion timestamp")
+    elapsed_seconds: Optional[float] = Field(default=None, description="Total execution duration")
+    initial_checks: Dict[str, Any] = Field(
+        default_factory=dict, description="Initial check stages, detected failures, and supporting log evidence"
+    )
+    attempts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Repair attempts: diagnosis, changed files, patch explanation, verification, test results"
+    )
+    retry_count: int = Field(default=0, description="Total repair attempts executed")
+    stop_reason: str = Field(default="", description="Reason for stopping or completing the run")
+    unresolved_issues: List[str] = Field(
+        default_factory=list, description="List of failures or checks remaining unresolved"
+    )
+    publication: Dict[str, Any] = Field(
+        default_factory=dict, description="Publication attempt status, branch, commit, PR URL, or skip/block reason"
+    )
+    verified_patches: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Verified patches applied during the run"
+    )
+    verification_scope_statement: str = Field(
+        ..., description="Clear truthfulness statement of what ACID AI verified and what it could not verify"
+    )
+    summary: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Structured beginner-friendly plain-English summary of run outcome, attempts, and next steps",
+    )
+    markdown: str = Field(default="", description="Rendered Markdown report text")
+
+    def __getitem__(self, item: str):
+        """Allow subscript access for backwards-compatibility."""
+        return getattr(self, item)
+
+    def get(self, item: str, default=None):
+        """Allow get access for backwards-compatibility."""
+        return getattr(self, item, default)

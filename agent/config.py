@@ -59,17 +59,21 @@ def load_config(env: Optional[Mapping[str, str]] = None) -> AgentConfig:
     except ValueError:
         vtimeout = 180
 
-    sandbox_image = env.get("SANDBOX_IMAGE", "python:3.11-slim") or "python:3.11-slim"
+    sandbox_image = env.get("SANDBOX_IMAGE", "cicd-sandbox:latest") or "cicd-sandbox:latest"
+    raw_ro = env.get("SANDBOX_READ_ONLY_ROOTFS", "true")
+    sandbox_ro = raw_ro.strip().lower() in ("true", "1", "yes")
+    sandbox_storage = env.get("SANDBOX_STORAGE_SIZE", "256m") or "256m"
+    sandbox_mode = env.get("SANDBOX_STORAGE_MODE", "read_only_tmpfs") or "read_only_tmpfs"
 
     raw_attempts = env.get("MAX_REPAIR_ATTEMPTS")
     try:
-        max_attempts = int(raw_attempts) if raw_attempts else 2
+        max_attempts = int(raw_attempts) if raw_attempts else 3
     except ValueError:
-        max_attempts = 2
+        max_attempts = 3
 
     base_branch = env.get("BASE_BRANCH") or env.get("TARGET_BRANCH") or "main"
     github_actor = env.get("GITHUB_ACTOR")
-    raw_enable_repair_pr = env.get("ENABLE_REPAIR_PR", "true")
+    raw_enable_repair_pr = env.get("ENABLE_REPAIR_PR", "false")
     enable_repair_pr = raw_enable_repair_pr.strip().lower() in ("true", "1", "yes")
 
     raw_max_tokens = env.get("MAX_PROMPT_TOKENS")
@@ -78,6 +82,9 @@ def load_config(env: Optional[Mapping[str, str]] = None) -> AgentConfig:
     except ValueError:
         max_prompt_tokens = 12000
 
+    raw_publisher_token = env.get("REPAIR_PUBLISHER_TOKEN")
+    publisher_token = raw_publisher_token.strip() if raw_publisher_token and raw_publisher_token.strip() else None
+
     return AgentConfig(
         ai_provider=ai_provider,
         anthropic_api_key=env.get("ANTHROPIC_API_KEY"),
@@ -85,6 +92,7 @@ def load_config(env: Optional[Mapping[str, str]] = None) -> AgentConfig:
         anthropic_model=env.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         gemini_model=env.get("GEMINI_MODEL", "gemini-3.8-flash"),
         github_token=env.get("GITHUB_TOKEN"),
+        publisher_token=publisher_token,
         repo_name=env.get("REPO_NAME"),
         pr_number=pr_number,
         commit_sha=env.get("COMMIT_SHA", "unknown") or "unknown",
@@ -98,6 +106,9 @@ def load_config(env: Optional[Mapping[str, str]] = None) -> AgentConfig:
         generate_patch=generate_patch,
         verification_timeout_seconds=vtimeout,
         sandbox_image=sandbox_image,
+        sandbox_read_only_rootfs=sandbox_ro,
+        sandbox_storage_size=sandbox_storage,
+        sandbox_storage_mode=sandbox_mode,
         max_repair_attempts=max_attempts,
         base_branch=base_branch,
         github_actor=github_actor,

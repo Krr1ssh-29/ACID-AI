@@ -81,12 +81,17 @@ def sanitize_error_message(msg: str, keys: Optional[List[Optional[str]]] = None)
     return clean
 
 
-def build_user_prompt(logs: str, failure_context: Dict[str, Any]) -> str:
-    """Format failure logs and detected categories into a standard prompt for AI models.
+def build_user_prompt(
+    logs: str,
+    failure_context: Dict[str, Any],
+    source_snippets: Optional[str] = None,
+) -> str:
+    """Format failure logs, affected files, and detected categories into a standard prompt for AI models.
 
     Args:
         logs: Diagnostic log text.
         failure_context: Categorized failure flags and detected types.
+        source_snippets: Optional source code excerpts from inspected repository files.
 
     Returns:
         Formatted prompt string with untrusted logs delimiter-wrapped.
@@ -95,12 +100,25 @@ def build_user_prompt(logs: str, failure_context: Dict[str, Any]) -> str:
     detected_list = failure_context.get("detected", [])
     detected_types = ", ".join(detected_list) or "unknown"
     sanitized_logs = sanitize_for_prompt(logs, max_chars=8000)
+
+    snippets_content = source_snippets or failure_context.get("source_snippets", "")
+    snippets_section = ""
+    if snippets_content:
+        clean_snippets = sanitize_for_prompt(snippets_content, max_chars=4000)
+        snippets_section = (
+            "=== AFFECTED REPOSITORY FILES ===\n"
+            "<untrusted_source_snippets>\n"
+            f"{clean_snippets}\n"
+            "</untrusted_source_snippets>\n\n"
+        )
+
     return (
         f"Pipeline failure detected. Detected failure types: {detected_types}\n\n"
         "=== FAILURE LOGS ===\n"
         "<untrusted_ci_logs>\n"
         f"{sanitized_logs}\n"
         "</untrusted_ci_logs>\n\n"
+        f"{snippets_section}"
         "Analyze the failure and provide your diagnosis in the requested JSON structure. "
         "Respond with ONLY valid JSON."
     )

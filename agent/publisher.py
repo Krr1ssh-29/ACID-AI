@@ -114,6 +114,10 @@ def format_repair_pr_body(
 
     run_url = f"https://github.com/{config.repo_name}/actions/runs/{config.run_id}"
     root_cause = diagnosis.get("root_cause", "No detailed root cause provided.")
+    if config.pr_number:
+        trigger_context_line = f"- **Trigger Context:** Pull Request `#{config.pr_number}`"
+    else:
+        trigger_context_line = f"- **Trigger Context:** Direct Push (`{config.base_branch or DEFAULT_BASE_BRANCH}`)"
 
     files_list_md = "\n".join([f"- `{fp.path}` ({fp.status}, +{fp.additions}/-{fp.deletions})" for fp in patch.files])
 
@@ -137,6 +141,7 @@ def format_repair_pr_body(
 ### 🔍 Diagnosed Pipeline Failure
 - **Workflow Run ID:** [{config.run_id}]({run_url})
 - **Failed Commit SHA:** `{config.commit_sha}`
+{trigger_context_line}
 - **Failure Categories:** {categories_badges}
 - **Root Cause Analysis:**
 > {root_cause}
@@ -353,7 +358,8 @@ def handle_fork_fallback(
         print(f"⚠️ Could not write 'agent-patch.diff': {e}")
 
     # 2. Post PR comment if target PR number is present
-    if config.pr_number and config.github_token:
+    token = config.publisher_token or config.github_token
+    if config.pr_number and token:
         is_verified_success = (
             verification is not None
             and verification.is_verified is True
@@ -388,9 +394,14 @@ def handle_fork_fallback(
         try:
             from agent.github import post_pr_comment
             clean_body = redact_secrets(fallback_body)
-            post_pr_comment(clean_body, config.repo_name, config.pr_number, config.github_token)
+            post_pr_comment(clean_body, config.repo_name, config.pr_number, token)
         except Exception as e:
             print(f"⚠️ Could not post fallback PR comment: {e}")
+    else:
+        print(
+            "ℹ️ Direct push run (no PR context): skipped PR comment. "
+            "Patch diff preserved in 'agent-patch.diff' artifact."
+        )
 
 
 def publish_repair_pr(
@@ -472,16 +483,23 @@ def publish_repair_pr(
         )
 
     # 5. Check credentials
-    if not config.github_token or not config.repo_name:
+    token = config.publisher_token or config.github_token
+    if not token or not config.repo_name:
         return PublishResult(
             status=PublishStatus.PERMISSION_ERROR,
-            message="Cannot publish repair PR: GITHUB_TOKEN or REPO_NAME is missing.",
+            message="Cannot publish repair PR: GITHUB_TOKEN or REPAIR_PUBLISHER_TOKEN, and REPO_NAME are missing.",
+        )
+
+    if "/" not in config.repo_name:
+        return PublishResult(
+            status=PublishStatus.PERMISSION_ERROR,
+            message=f"Cannot publish repair PR: Repository '{config.repo_name}' is not in valid owner/repo format.",
         )
 
     repo = config.repo_name
     base_branch = config.base_branch or DEFAULT_BASE_BRANCH
     headers = {
-        "Authorization": f"token {config.github_token}",
+        "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
         "User-Agent": "ACID-AI",
     }
@@ -497,6 +515,12 @@ def publish_repair_pr(
     try:
         ref_check_url = f"https://api.github.com/repos/{repo}/git/ref/heads/{branch_name}"
         ref_resp = requests.get(ref_check_url, headers=headers, timeout=20)
+        if ref_resp.status_code == 401:
+            return PublishResult(
+                status=PublishStatus.PERMISSION_ERROR,
+                branch_name=branch_name,
+                message=f"401 Unauthorized: Invalid or expired GITHUB_TOKEN for repository '{repo}'.",
+            )
         if ref_resp.status_code == 200:
             existing_pr = check_existing_pr(repo, branch_name, headers)
             if existing_pr:
@@ -618,12 +642,22 @@ def publish_repair_pr(
         base_resp = requests.get(base_ref_url, headers=headers, timeout=20)
         if base_resp.status_code == 200:
             base_sha = base_resp.json()["object"]["sha"]
+        elif base_resp.status_code == 401:
+            return PublishResult(
+                status=PublishStatus.PERMISSION_ERROR,
+                message=f"401 Unauthorized: Invalid or expired GITHUB_TOKEN for repository '{repo}'.",
+            )
         elif base_resp.status_code == 404:
             # Fallback to branches endpoint
             b_url = f"https://api.github.com/repos/{repo}/branches/{base_branch}"
             b_resp = requests.get(b_url, headers=headers, timeout=20)
             if b_resp.status_code == 200:
                 base_sha = b_resp.json()["commit"]["sha"]
+            elif b_resp.status_code == 401:
+                return PublishResult(
+                    status=PublishStatus.PERMISSION_ERROR,
+                    message=f"401 Unauthorized: Invalid or expired GITHUB_TOKEN for repository '{repo}'.",
+                )
             else:
                 return PublishResult(
                     status=PublishStatus.API_ERROR,
@@ -684,6 +718,12 @@ def publish_repair_pr(
         tree_url = f"https://api.github.com/repos/{repo}/git/trees"
         tree_payload = {"base_tree": base_tree_sha, "tree": tree_items}
         tree_resp = requests.post(tree_url, headers=headers, json=tree_payload, timeout=30)
+        if tree_resp.status_code == 401:
+            return PublishResult(
+                status=PublishStatus.PERMISSION_ERROR,
+                branch_name=branch_name,
+                message="401 Unauthorized creating git tree: invalid or expired GITHUB_TOKEN.",
+            )
         if tree_resp.status_code == 403:
             handle_fork_fallback(patch, config, "403 Forbidden creating git tree", verification=verification)
             return PublishResult(
@@ -718,6 +758,12 @@ def publish_repair_pr(
             "parents": [base_sha],
         }
         create_commit_resp = requests.post(create_commit_url, headers=headers, json=create_commit_payload, timeout=30)
+        if create_commit_resp.status_code == 401:
+            return PublishResult(
+                status=PublishStatus.PERMISSION_ERROR,
+                branch_name=branch_name,
+                message="401 Unauthorized creating git commit: invalid or expired GITHUB_TOKEN.",
+            )
         if create_commit_resp.status_code == 403:
             handle_fork_fallback(patch, config, "403 Forbidden creating git commit", verification=verification)
             return PublishResult(
@@ -742,6 +788,13 @@ def publish_repair_pr(
         create_ref_url = f"https://api.github.com/repos/{repo}/git/refs"
         ref_payload = {"ref": f"refs/heads/{branch_name}", "sha": new_commit_sha}
         create_ref_resp = requests.post(create_ref_url, headers=headers, json=ref_payload, timeout=30)
+        if create_ref_resp.status_code == 401:
+            return PublishResult(
+                status=PublishStatus.PERMISSION_ERROR,
+                branch_name=branch_name,
+                commit_sha=new_commit_sha,
+                message="401 Unauthorized creating git branch: invalid or expired GITHUB_TOKEN.",
+            )
         if create_ref_resp.status_code == 403:
             handle_fork_fallback(patch, config, "403 Forbidden creating git branch", verification=verification)
             return PublishResult(
@@ -782,6 +835,13 @@ def publish_repair_pr(
     try:
         pulls_url = f"https://api.github.com/repos/{repo}/pulls"
         pulls_resp = requests.post(pulls_url, headers=headers, json=pr_payload, timeout=30)
+        if pulls_resp.status_code == 401:
+            return PublishResult(
+                status=PublishStatus.PERMISSION_ERROR,
+                branch_name=branch_name,
+                commit_sha=new_commit_sha,
+                message="401 Unauthorized creating pull request: invalid or expired GITHUB_TOKEN.",
+            )
         if pulls_resp.status_code == 201:
             pr_data = pulls_resp.json()
             return PublishResult(

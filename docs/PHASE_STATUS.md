@@ -6,13 +6,13 @@ This document maintains the active state, acceptance criteria, and governance st
 
 ## Current Status Overview
 
-- **Current Authorized Phase:** Phase 09 — Hackathon Demo & Presentation
-- **Current Status:** `COMPLETED` (Implemented interactive web presentation dashboard in `dashboard/` with Flask, Vanilla CSS dark theme, glassmorphic layout, 6 repeatable failure scenarios, real agent component reuse, fail-closed safety visualization, live Gemini/mock toggles, run history, and `run_demo.py` launcher; 253 passed / 2 skipped unit & integration tests with 86% coverage, 3 sample-app tests passing, flake8 clean across all files)
-- **Previous Completed Phase:** Phase 08 — End-to-End Testing & Release Readiness
-- **Next Authorized Action:** Await user authorization or presentation feedback. All planned v1 and demo milestones (Phases 00–09) are complete.
+- **Current Authorized Phase:** QA Fix 2 — Beginner-Friendly Reports, Accurate Diagnosis, and PDF Export
+- **Current Status:** `COMPLETED` (Structured Plain-English summary added across 8 dimensions for all 5 canonical outcomes [healthy, repaired, partially repaired, unresolved, blocked] with Level 1 executive summary and Level 2 technical drill-downs; multi-format reporting with single source of truth across JSON, Markdown, and PDF exports; professional ReportLab PDF generation with running headers, "Page X of Y" pagination, outcome badges, diff previews, secret redaction, and human review boundaries via `GET /api/reports/<run_id>/pdf` and dashboard "Download Report (PDF)" actions; candidate file path rendering fixed eliminating `[object Object]` bugs; strict separation between demo fixtures and repository-first runs; contract ambiguity handling refusing to guess when test and implementation conflict without specification evidence; 373 total tests passing [340 unit + 30 integration + 3 sample-app], flake8 clean [0 errors], git diff --check clean)
+- **Previous Completed Phase:** Phase 5 — Final Reporting and Verified Draft PR Delivery
+- **Next Authorized Action:** Await user review and instructions.
 
 > [!IMPORTANT]
-> All core roadmap phases (00 through 09) are now fully implemented and verified. Do not begin post-v1 features or stage/commit/push files without explicit user approval as specified by [AGENTS.md](../AGENTS.md).
+> QA Fix 2 is fully implemented, tested, and verified. Single source of truth is maintained across JSON, Markdown, and PDF reports. GitHub Draft PR delivery remains strictly opt-in and disabled by default (`ENABLE_REPAIR_PR=false`). Unverified candidate repairs are strictly refused publication. Candidate code never executes on the host runner. Do not stage, commit, or push files without explicit user approval.
 
 ---
 
@@ -252,8 +252,65 @@ The following decisions require explicit confirmation from the repository owner 
 
 ---
 
+---
+
+## Phase 4 (Autonomous Repair & Retry Loop) Acceptance Checklist
+
+| Deliverable / Requirement | Target Artifact | Status | Verification Evidence |
+| :--- | :--- | :--- | :--- |
+| **Bounded Autonomous Repair Loop** | `agent/runner.py`, `dashboard/engine.py` | **PASS** | `run_repair_loop` and `run_repository_analysis` orchestrate diagnostic gathering, patch generation, policy validation, disposable tree modification, and sandboxed test execution without manual intervention. |
+| **Configurable Attempt Limit** | `agent/models.py`, `agent/config.py` | **PASS** | `max_repair_attempts` defaults to 3 (constrained `1 <= max_repair_attempts <= 10`). |
+| **Repeated Identical Patch Detection** | `agent/runner.py`, `dashboard/engine.py` | **PASS** | Tracks `seen_diffs`. Immediately halts loop with `STOPPED_REPEATED_PATCH` when a candidate patch identical to an earlier failed attempt is generated. |
+| **Complete Audit Trail & Attempt History** | `agent/models.py`, `dashboard/engine.py` | **PASS** | `RepairAttempt` records attempt number, diagnosis, candidate patch, affected files, validation result, container verification outcome, test results, and reason. Preserved in `RunRecord.attempts`. |
+| **Zero Host Runner Execution Invariant** | `agent/sandbox.py`, `agent/runner.py` | **PASS** | Candidate code execution strictly requires Docker container isolation (`cicd-sandbox:latest`). If Docker or image is unavailable, marks `INFRASTRUCTURE_FAILURE` and stops with `BLOCKED_INFRASTRUCTURE`. Host execution is strictly forbidden. |
+| **Zero Repository Mutation** | `agent/runner.py`, `dashboard/engine.py` | **PASS** | Analysis and patch application strictly occur inside disposable ephemeral workspaces (`tempfile.TemporaryDirectory`). Original target repository verified 100% immutable. |
+| **Failure Feedback Propagation** | `agent/runner.py`, `dashboard/engine.py` | **PASS** | Upon test verification failure, stdout/stderr and failed test names are captured and fed into subsequent AI prompt as previous attempt feedback. |
+| **Truthful Final Statuses** | `agent/models.py`, `dashboard/engine.py` | **PASS** | Implemented 5 mutually exclusive truthful statuses: `repaired`, `partially repaired`, `unresolved`, `blocked`, and `healthy`. |
+| **Missing AI Credential Handling** | `dashboard/engine.py` | **PASS** | Pre-flight validation checks provider API keys. If missing, distinguishes real passing check capability while marking repair stage `blocked` (`MISSING_CREDENTIALS`). |
+| **PR Publication Disabled in Phase 4** | `dashboard/engine.py`, `agent/models.py` | **PASS** | Automated PR publication explicitly bypassed (`publication.status = "skipped_phase_4"`). |
+| **Dashboard Autonomous Loop UI** | `dashboard/templates/index.html`, `dashboard/static/app.js`, `dashboard/static/style.css` | **PASS** | Dedicated Autonomous Repair card displaying final status badge, attempts counter, verified patches count, stop reason, and chronological timeline breakdown of each attempt. |
+| **Automated Unit & E2E Test Suite** | `tests/unit/test_autonomous_repair_loop.py`, `tests/integration/test_autonomous_repair_e2e.py` | **PASS** | 13 unit tests covering all 10 required acceptance criteria and 2 live Docker container E2E tests passing. |
+| **Full Regression & Quality** | `pytest`, `flake8`, `git diff --check` | **PASS** | **315 passed unit & integration tests**, 3 sample-app tests passed, 0 flake8 errors, 0 git diff errors. |
+
+---
+
+## Phase 5 (Final Reporting and Verified Draft PR Delivery) Acceptance Checklist
+
+| Deliverable / Requirement | Target Artifact | Status | Verification Evidence |
+| :--- | :--- | :--- | :--- |
+| **Structured Final Report Generation** | `agent/report.py`, `agent/models.py` | **PASS** | `FinalReport` model and `generate_final_report()` produce structured reports with repository identity, base commit, 5 truthful outcomes (`healthy`, `repaired`, `partially repaired`, `unresolved`, `blocked`), initial triage, attempt history, actual verification commands & exit codes, and stop reasons. |
+| **Secret & Token Redaction** | `agent/report.py`, `agent/security.py` | **PASS** | All generated Markdown and stored JSON reports scrub credentials via `redact_secrets()`, ensuring no API keys or tokens appear in reports, logs, or UI. |
+| **Truthful Verification Scope Notice** | `agent/report.py` | **PASS** | Clear statement documenting what was verified (exit code 0 for allowlisted commands in isolated container) and what could not be guaranteed (non-eval edge cases, performance); mandatory human review stated. |
+| **Report Persistence & Retrieval API** | `agent/report.py`, `dashboard/app.py` | **PASS** | Persisted to memory and `reports/{run_id}.json` / `.md`. Exposed via `GET /api/reports/<run_id>`, `GET /api/reports/<run_id>/markdown`, and `GET /api/reports`. |
+| **Opt-In Draft PR Delivery** | `agent/publisher.py`, `agent/config.py`, `dashboard/engine.py` | **PASS** | Publication is strictly opt-in and disabled by default (`ENABLE_REPAIR_PR=false`). Requires explicit configuration or UI toggle. |
+| **Publication Gating Invariant** | `agent/publisher.py`, `dashboard/engine.py` | **PASS** | Candidate code is published exclusively when verification returned `VERIFIED_SUCCESS` (exit code 0 in sandbox) and diff matches final validated candidate. Blocked, failed, or unverified repairs are strictly refused publication. |
+| **Dedicated Repair Branch & Anti-Recursion** | `agent/publisher.py` | **PASS** | Creates dedicated `agent/fix-{category}-{run_id}` branch from recorded base commit. PR includes anti-recursion tag `[ai-agent-repair]` to prevent recursive CI loops. Auto-merging permanently prohibited (Draft PR only). |
+| **Clean Tree & Sensitive File Exclusion** | `agent/publisher.py`, `agent/validator.py` | **PASS** | Publishes exclusively validated diff files via Git database tree objects. Automatically rejects `.env`, secrets, or temporary files. |
+| **Truthful Handling of Missing Remote / Credentials** | `agent/publisher.py`, `dashboard/engine.py` | **PASS** | Accurately identifies owner/repo slug and base branch from remotes (`extract_github_repo_from_remote`). Marks publication skipped/unavailable with honest explanation when token or remote is absent. |
+| **Conflict & API Error Handling** | `agent/publisher.py` | **PASS** | Truthfully handles HTTP 401 Unauthorized, 403 Forbidden, 422 branch conflicts, and duplicate publication idempotency. Never force-pushes or overwrites existing user code. |
+| **Dashboard Report & Delivery Integration** | `dashboard/templates/index.html`, `dashboard/static/app.js`, `dashboard/static/style.css` | **PASS** | Verified Final Report card with View Report modal, Export Markdown, and Export JSON buttons; Opt-In Draft PR Delivery toggle and token input; real draft PR link displayed only upon confirmed creation. |
+| **Automated QA Test Suite** | `tests/unit/test_phase5_reporting_and_delivery.py` | **PASS** | 11 automated unit tests covering all 10 criteria specified in Phase 5 Part E with deterministic mocked GitHub API responses. |
+| **Full Regression & Quality** | `pytest`, `flake8`, `git diff --check` | **PASS** | **326 passed unit & integration tests (296 unit + 30 integration)**, 3 sample-app tests passed, 0 flake8 errors, 0 git diff errors. |
+
+## QA Fix 2 (Beginner-Friendly Reports, Accurate Diagnosis, and PDF Export) Acceptance Checklist
+
+| Deliverable / Requirement | Target Artifact | Status | Verification Evidence |
+| :--- | :--- | :--- | :--- |
+| **Separation of Demo vs Repo-First Modes** | `agent/providers.py`, `dashboard/engine.py` | **PASS** | Demo scenarios retain deterministic fixtures while repo-first runs use actual files, logs, and evidence. Canned mock patches are never injected into repo runs. |
+| **Contract Ambiguity Detection** | `agent/patcher.py`, `agent/providers.py`, `dashboard/engine.py` | **PASS** | When tests and implementation conflict without specification evidence (e.g. `assert add(2, 2) == 5` vs `add` returning 4), agent diagnoses contract ambiguity with low confidence and refuses to blindly modify code or tests. |
+| **Candidate File Path Rendering** | `agent/report.py`, `agent/pdf_report.py`, `dashboard/static/app.js` | **PASS** | `format_file_list()` safely parses strings, FilePatch objects, dicts, and arrays. Eliminates all `[object Object]` bugs on timeline and reports. |
+| **Plain-English Run Summary Model** | `agent/models.py`, `agent/report.py` | **PASS** | `PlainEnglishSummary` model covers all 8 dimensions (Overall Outcome, What Happened, Why It Happened, What ACID Attempted, Did Repair Work, Why Stopped, Next Steps, Publication Status) across all 5 canonical outcomes. |
+| **Two-Level Report Organization** | `dashboard/templates/index.html`, `dashboard/static/app.js`, `dashboard/static/style.css` | **PASS** | Level 1 beginner-friendly executive summary visible immediately at top of card and modal; Level 2 expandable technical details secondary. |
+| **Professional PDF Export Engine** | `agent/pdf_report.py`, `agent/report.py` | **PASS** | ReportLab generation with running headers, footers with "Page X of Y" pagination, executive metadata, outcome badges, diff previews, bounded logs, and secret redaction. |
+| **PDF Download API Route** | `dashboard/app.py` | **PASS** | `GET /api/reports/<run_id>/pdf` returns HTTP 200, `application/pdf`, and safe `Content-Disposition: attachment; filename="acid-ai-report-<run_id>.pdf"`. Returns 404 for unknown run IDs. |
+| **Single Source of Truth** | `agent/report.py`, `agent/pdf_report.py`, `dashboard/app.py` | **PASS** | JSON, Markdown, and PDF exports all derive from the identical underlying `FinalReport` and run record facts. |
+| **Automated QA & Regression Suites** | `tests/unit/`, `tests/integration/` | **PASS** | 5 dedicated QA Fix 2 test suites (27 tests) plus full regression suite: **373 passed tests [340 unit + 30 integration + 3 sample-app]**, 0 failures. |
+| **Code Style & Diff Cleanliness** | `flake8`, `git diff --check` | **PASS** | `flake8 agent dashboard tests` clean (0 errors), `git diff --check` clean (0 errors). |
+
+---
+
 ## Next Authorized Action
 
-- All roadmap phases (00 through 09) are complete, fully tested, and verified.
-- Present the Phase 09 Hackathon Demo & Presentation Completion Report to the user.
-- Await repository owner instructions before staging, committing, pushing, or presenting to hackathon judges.
+- QA Fix 2 (Beginner-Friendly Reports, Accurate Diagnosis, and PDF Export) is complete, fully tested, and verified.
+- Present the QA Fix 2 Completion Report to the user.
+- Await repository owner instructions before staging, committing, pushing, or deploying.
